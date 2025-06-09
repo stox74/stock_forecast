@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from sqlalchemy import create_engine
 
 def fetch_trade_data_multi_hscode(db_info: dict,
@@ -101,3 +102,31 @@ def create_yoy_growth_pivot(df_quarterly: pd.DataFrame,
         pivot_df = pivot_df[pivot_df.index <= pd.to_datetime(end_date)]
 
     return pivot_df
+
+def fetch_table_data(db_info: dict, table_name: str) -> pd.DataFrame:
+    """
+    investar DB에서 테이블 이름만 입력하면 전체 데이터를 가져오는 함수
+
+    Parameters:
+    - db_info (dict): DB 접속 정보 (user, password, host, port, database)
+    - table_name (str): 조회할 테이블 이름
+
+    Returns:
+    - pd.DataFrame: 전체 테이블 데이터
+    """
+    try:
+        # SQLAlchemy 엔진 생성
+        engine = create_engine(
+            f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
+            f"{db_info['host']}:{db_info['port']}/{db_info['database']}"
+        )
+
+        # 데이터 조회
+        query = f"SELECT * FROM {table_name}"
+        df = pd.read_sql(query, con=engine)
+        print(f"✅ '{table_name}' 테이블에서 {len(df)}건의 데이터를 가져왔습니다.")
+        return df
+
+    except Exception as e:
+        print(f"❌ 데이터 조회 실패: {e}")
+        return pd.DataFrame()
