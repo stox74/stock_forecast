@@ -10,7 +10,10 @@ from sqlalchemy import create_engine
 # 1. 파일에서 HS 코드 불러오기
 path = r"C:\Users\MetaM\PycharmProjects\stock_forecast\DATA\미국_200대_수출금액_.HScode_202506.xlsx"
 hs_raw = pd.read_excel(path)
-hs_code = hs_raw['HS_Code'].unique().tolist()
+hs_raw['hs_code'] = hs_raw['HS_Code'].astype(str).str[:6]
+# print(len(hs_code))
+hs_code = hs_raw['hs_code'].unique().tolist()
+
 print(f"총 HS 코드 수: {len(hs_code)}")
 
 # 2. 날짜 설정
