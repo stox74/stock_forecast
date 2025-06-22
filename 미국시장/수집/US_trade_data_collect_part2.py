@@ -8,7 +8,7 @@ from tqdm import tqdm
 from sqlalchemy import create_engine
 
 # 1. 파일에서 HS 코드 불러오기
-path = r"C:\Users\MetaM\PycharmProjects\stock_forecast\DATA\미국_200대_수출금액_.HScode_202506.xlsx"
+path =  r"C:\Users\82108\OneDrive\바탕 화면\investment\investment_strategy\DATA\미국_200대_수출금액_.HScode_202506.xlsx"
 hs_raw = pd.read_excel(path)
 hs_raw['hs_code'] = hs_raw['HS_Code'].astype(str).str[:6]
 # print(len(hs_code))
@@ -23,7 +23,7 @@ start_q = 1
 export_import = 'expDlr'
 
 # 월말 기준 날짜 리스트
-dates_period = pd.date_range(start='2020-01', end='2025-05', freq='M')
+dates_period = pd.date_range(start='2020-01', end='2025-05', freq='ME')
 dates_list1 = [str(dates)[:7] for dates in dates_period]
 
 # 3. 미국 수출 데이터 수집 함수
@@ -108,7 +108,8 @@ if __name__ == "__main__":
     )
 
     db_info = {
-        'host': 'hystox74.synology.me',
+        'host': '192.168.0.230',
+        # 'host': 'hystox74.synology.me',
         'port': 3307,
         'user': 'stox7412',
         'password': 'Apt106503!~',
