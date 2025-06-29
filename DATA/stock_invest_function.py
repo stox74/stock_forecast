@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
+import socket
 
 def fetch_trade_data_multi_hscode(db_info: dict,
                                    hs_codes: list,
@@ -130,3 +131,17 @@ def fetch_table_data(db_info: dict, table_name: str) -> pd.DataFrame:
     except Exception as e:
         print(f"❌ 데이터 조회 실패: {e}")
         return pd.DataFrame()
+
+def get_db_host():
+    try:
+        # 현재 로컬 IP 주소 확인
+        local_ip = socket.gethostbyname(socket.gethostname())
+
+        # 내부 네트워크면 192로 시작 (또는 10. / 172.16~31 도 가능)
+        if local_ip.startswith("192.168."):
+            return '192.168.0.230'  # 집 내부 IP로 수정
+        else:
+            return 'hystox74.synology.me'  # 외부 접속용 DDNS 주소
+    except Exception as e:
+        print("⚠️ IP 확인 실패:", e)
+        return 'hystox74.synology.me'  # 예외 발생 시 외부 주소 사용
