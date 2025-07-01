@@ -560,3 +560,71 @@ def get_market_cap(symbol, api_key, from_date, to_date):
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date')
     return df[['date', 'marketCap']]
+
+
+def load_forecast_by_hscode(db_info, root_hs_code, table_name):
+    """
+    특정 root_hs_code에 해당하는 예측 데이터를 데이터베이스에서 불러오는 함수
+
+    Parameters:
+    - db_info (dict): DB 접속 정보 (host, port, user, password, database)
+    - root_hs_code (str or int): 조회할 HS 코드
+    - table_name (str): 테이블 이름 (기본값: 'trade_forecast_by_month')
+
+    Returns:
+    - pd.DataFrame: 조회된 데이터프레임
+    """
+    try:
+        # ✅ DB 엔진 생성
+        engine = create_engine(
+            f"mysql+pymysql://{db_info['user']}:{db_info['password']}@{db_info['host']}:{db_info['port']}/{db_info['database']}"
+        )
+
+        # ✅ SQL 쿼리 작성 및 실행
+        query = f"""
+            SELECT *
+            FROM {table_name}
+            WHERE root_hs_code = '{root_hs_code}'
+            ORDER BY date
+        """
+        df = pd.read_sql(query, con=engine)
+
+        print(f"✅ root_hs_code={root_hs_code}에 해당하는 {len(df)}개 행을 불러왔습니다.")
+        return df
+
+    except Exception as e:
+        print(f"❌ 데이터 불러오기 실패: {e}")
+        return pd.DataFrame()
+
+def get_quarterly_export_forecast(db_info: dict, hs_code: str) -> pd.DataFrame:
+    """
+    특정 HS 코드를 기준으로 수출 예측 데이터를 불러와 분기별로 정리하는 함수
+
+    Parameters:
+    - db_info: dict, MariaDB 접속 정보
+    - hs_code: str, 예: '854232' (HS 코드)
+
+    Returns:
+    - quarterly_sum_df: DataFrame, 분기별 수출합계 및 qoq/yoy 증가율 포함
+    """
+    # DB에서 해당 HS코드의 예측 데이터 로드
+    # target_export_df = load_forecast_by_hscode(db_info, hs_code)
+    temp_df = load_forecast_by_hscode(db_info, hs_code, table_name='korea_monthly_trade_data_forecast')
+
+    # 중복 제거
+    target_export_df = temp_df.drop_duplicates(subset=['date'])
+
+    # date를 datetime으로 변환
+    target_export_df['date'] = pd.to_datetime(target_export_df['date'])
+
+    # 분기 추출 및 그룹화
+    target_export_df['quarter'] = target_export_df['date'].dt.to_period('Q')
+    quarterly_sum_df = target_export_df.groupby('quarter')['expDlr_forecast_12m'].sum().reset_index()
+
+    # datetime 변환 후 추가 계산
+    quarterly_sum_df['quarter'] = quarterly_sum_df['quarter'].dt.to_timestamp()
+    quarterly_sum_df['export_qoq_change'] = quarterly_sum_df['expDlr_forecast_12m'].pct_change(periods=1)
+    quarterly_sum_df['export_yoy_change'] = quarterly_sum_df['expDlr_forecast_12m'].pct_change(periods=4)
+    quarterly_sum_df['date_month'] = quarterly_sum_df['quarter'] + pd.offsets.QuarterEnd(0)
+
+    return quarterly_sum_df
