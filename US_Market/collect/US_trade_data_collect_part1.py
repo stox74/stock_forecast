@@ -104,7 +104,7 @@ if __name__ == "__main__":
     us_export_month, us_export_quarter = get_us_export_data(
         hs_list=hs_code,
         start='2013-01',
-        end='2025-04',
+        end='2025-05',
         api_key=key
     )
 
