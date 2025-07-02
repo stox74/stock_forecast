@@ -8,6 +8,7 @@ from dateutil.relativedelta import *
 from sqlalchemy import create_engine
 import warnings
 from DATA.stock_invest_function import get_db_host  # 사용자 정의 함수
+from sqlalchemy.types import String, Float, Date
 import pymysql
 import FinanceDataReader as fdr
 
@@ -83,14 +84,40 @@ def transform_to_long_format(df: pd.DataFrame) -> pd.DataFrame:
 # ==============================
 # 📌 DB 업로드 함수
 # ==============================
+
 def upload_to_db(df: pd.DataFrame, table_name: str, engine):
-    df.to_sql(
-        name=table_name,
-        con=engine,
-        if_exists='append',  # 필요시 'replace'
-        index=False
-    )
-    print(f"✅ DB 테이블 [{table_name}] 으로 업로드 완료!")
+    # ✅ 데이터 타입 정의
+    dtype_dict = {
+        'date': Date(),
+        'ticker': String(10),
+        'indicator': String(50),
+        'value': Float()
+    }
+
+    # ✅ date 컬럼을 datetime.date 로 변환
+    df['date'] = pd.to_datetime(df['date']).dt.date
+
+    # ✅ DB 커넥션 + 트랜잭션 직접 관리
+    conn = engine.connect()
+    trans = conn.begin()
+    try:
+        # ✅ chunksize 로 나누어 insert (예: 5000 행씩)
+        df.to_sql(
+            name=table_name,
+            con=conn,
+            if_exists='append',
+            index=False,
+            dtype=dtype_dict,
+            chunksize=5000
+        )
+        trans.commit()
+        print(f"✅ DB 테이블 [{table_name}] 업로드 완료!")
+    except Exception as e:
+        print(f"🚨 DB 업로드 실패: {e}")
+        trans.rollback()
+    finally:
+        conn.close()
+
 
 
 # ==============================
@@ -98,7 +125,7 @@ def upload_to_db(df: pd.DataFrame, table_name: str, engine):
 # ==============================
 def main():
     start_date = "2020-01-01"
-    end_date = "2025-06-30"
+    end_date = "2025-07-01"
     table_name = "ks_listed_company_daily_marketcap"
 
     # 1) 데이터 수집
