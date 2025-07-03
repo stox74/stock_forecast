@@ -1,7 +1,7 @@
 # ks_marketcap_loader.py
 
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from pandas.tseries.offsets import BDay
 from pykrx import stock
 from dateutil.relativedelta import *
@@ -124,8 +124,8 @@ def upload_to_db(df: pd.DataFrame, table_name: str, engine):
 # 📌 메인 실행 함수
 # ==============================
 def main():
-    start_date = "2020-01-01"
-    end_date = "2025-07-01"
+    start_date = "2025-01-01"
+    end_date = (datetime.today() - timedelta(days=1)).strftime('%Y-%m-%d')
     table_name = "ks_listed_company_daily_marketcap"
 
     # 1) 데이터 수집
