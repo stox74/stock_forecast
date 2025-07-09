@@ -450,11 +450,13 @@ def forecast_future_4q_with_sarima(df, date_col='date', value_col='endog_var', e
     plt.title("잔차 시계열 (원 단위)")
 
     plt.subplot(2, 2, 2)
-    plot_acf(residuals_original.dropna(), ax=plt.gca(), lags=20)
+    max_lags = min(20, len(residuals_original.dropna()) // 2 - 1)
+    plot_acf(residuals_original.dropna(), ax=plt.gca(), lags=max_lags)
     plt.title("잔차 ACF")
 
     plt.subplot(2, 2, 3)
-    plot_pacf(residuals_original.dropna(), ax=plt.gca(), lags=20)
+    max_lags = min(20, len(residuals_original.dropna()) // 2 - 1)
+    plot_pacf(residuals_original.dropna(), ax=plt.gca(), lags=max_lags)
     plt.title("잔차 PACF")
 
     plt.subplot(2, 2, 4)
@@ -631,134 +633,72 @@ def get_quarterly_export_forecast(db_info: dict, hs_code: str) -> pd.DataFrame:
 
 def forecast_future_with_sarima(df, date_col='date', value_col='endog_var', exog_col=None,
                                 freq='Q', forecast_steps=4, seasonal_period=None,
-                                use_log=True, fixed_variable=0):
+                                use_log=True, fixed_variable=0,
+                                order=None, seasonal_order=None):
     from statsmodels.tsa.statespace.sarimax import SARIMAX
-    from statsmodels.stats.diagnostic import acorr_ljungbox
-    from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-    import matplotlib.pyplot as plt
     from itertools import product
     import numpy as np
-    from tqdm import tqdm
     import pandas as pd
 
-    # 시계열 설정
     df = df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     df = df.set_index(date_col).asfreq(freq)
     ts = df[value_col]
 
-    # 주기 자동 결정
     if seasonal_period is None:
-        if freq == 'Q':
-            seasonal_period = 4
-        elif freq == 'M':
-            seasonal_period = 12
-        else:
+        seasonal_period = 4 if freq == 'Q' else 12 if freq == 'M' else None
+        if seasonal_period is None:
             raise ValueError(f"지원되지 않는 freq '{freq}'. 'Q' 또는 'M' 사용하세요.")
-
     print(f"🔍 주기 설정: seasonal_period = {seasonal_period}")
 
-    # 로그 변환
+    ts_transformed = np.log(ts) if use_log else ts
     if use_log:
-        ts_transformed = np.log(ts)
         print("✅ 로그 변환 적용")
-    else:
-        ts_transformed = ts
 
-    # 외생변수
+    exog_train = exog_forecast = None
     if exog_col:
         exog = df[exog_col]
         exog_train = exog.loc[ts_transformed.index]
         exog_forecast = exog.iloc[-forecast_steps:]
         print(f"📎 외생변수 '{exog_col}' 포함")
-    else:
-        exog_train = exog_forecast = None
 
-    # SARIMA 학습
     if fixed_variable == 1:
-        order = (1, 1, 1)
-        seasonal_order = (1, 1, 1, seasonal_period)
         print(f"🔧 고정 SARIMA 구조 사용: order={order}, seasonal_order={seasonal_order}")
-        model = SARIMAX(ts_transformed, order=order, seasonal_order=seasonal_order,
-                        exog=exog_train)
+        model = SARIMAX(ts_transformed, order=order, seasonal_order=seasonal_order, exog=exog_train)
         result = model.fit(disp=False)
     else:
         p = d = q = P = D = Q = [0, 1]
         best_aic = np.inf
         best_model = None
         print(f"🔍 Grid Search 진행 중...")
-
-        for order in product(p, d, q):
-            for seasonal in product(P, D, Q):
-                seasonal_order = (*seasonal, seasonal_period)
+        for order_try in product(p, d, q):
+            for seasonal_try in product(P, D, Q):
+                seasonal_try = (*seasonal_try, seasonal_period)
                 try:
-                    model = SARIMAX(ts_transformed, order=order,
-                                    seasonal_order=seasonal_order,
-                                    exog=exog_train)
+                    model = SARIMAX(ts_transformed, order=order_try,
+                                    seasonal_order=seasonal_try, exog=exog_train)
                     temp_result = model.fit(disp=False)
                     if temp_result.aic < best_aic:
                         best_aic = temp_result.aic
                         best_model = temp_result
-                        best_order = order
-                        best_seasonal = seasonal_order
-                except Exception:
+                        best_order = order_try
+                        best_seasonal = seasonal_try
+                except:
                     continue
-
         if best_model is None:
-            print("❌ Grid Search 실패: 유효한 SARIMA 모형이 하나도 학습되지 않았습니다.")
+            print("❌ Grid Search 실패")
             return None
-
         result = best_model
         print(f"✅ 최적 모형: order={best_order}, seasonal_order={best_seasonal}, AIC={best_aic:.2f}")
 
-    # 예측
-    forecast_log = result.forecast(steps=forecast_steps, exog=exog_forecast)
-    forecast = np.exp(forecast_log) if use_log else forecast_log
+    # 🔥 예측치 생성 (신뢰구간 제거)
+    forecast_mean = result.get_forecast(steps=forecast_steps, exog=exog_forecast).predicted_mean
+    if use_log:
+        forecast_mean = np.exp(forecast_mean)
 
-    # fittedvalues → 원 단위
-    fitted = np.exp(result.fittedvalues) if use_log else result.fittedvalues
-    ts_valid = ts[fitted.index]
-    residuals_original = ts_valid - fitted
+    forecast_df = pd.DataFrame({
+        'forecast': forecast_mean
+    })
 
-    # 시각화
-    plt.figure(figsize=(12, 5))
-    plt.plot(ts.index, ts.values, label='실제 시계열', color='skyblue')
-    plt.plot(forecast.index, forecast.values, label=f'예측값 (향후 {forecast_steps} 기간)', linestyle='--', marker='o', color='orange')
-    plt.xlim(ts.index.min(), forecast.index.max())
-    y_min = min(ts.min(), forecast.min()) * 0.95
-    y_max = max(ts.max(), forecast.max()) * 1.05
-    plt.ylim(y_min, y_max)
-    plt.title(f"전체 데이터 및 SARIMA 예측 결과", fontsize=14)
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    return forecast_df
 
-    print("\n📈 미래 예측 결과:")
-    print(forecast)
-
-    # 잔차 진단
-    print("\n📊 Ljung-Box Test (잔차 자기상관):")
-    print(acorr_ljungbox(residuals_original.dropna(), lags=[4, 8, 12], return_df=True))
-
-    plt.figure(figsize=(12, 6))
-    plt.subplot(2, 2, 1)
-    plt.plot(residuals_original)
-    plt.title("잔차 시계열 (원 단위)")
-
-    plt.subplot(2, 2, 2)
-    plot_acf(residuals_original.dropna(), ax=plt.gca(), lags=20)
-    plt.title("잔차 ACF")
-
-    plt.subplot(2, 2, 3)
-    plot_pacf(residuals_original.dropna(), ax=plt.gca(), lags=20)
-    plt.title("잔차 PACF")
-
-    plt.subplot(2, 2, 4)
-    plt.hist(residuals_original.dropna(), bins=20)
-    plt.title("잔차 분포")
-
-    plt.tight_layout()
-    plt.show()
-
-    return forecast
