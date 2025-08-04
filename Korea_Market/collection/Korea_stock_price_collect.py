@@ -1,10 +1,12 @@
 import pandas as pd
 import pymysql
+from DATA.stock_invest_function import *
 from datetime import datetime
 from tqdm import tqdm
 from pykrx import stock
+import requests
+from bs4 import BeautifulSoup
 
-# 오늘 날짜 가져오기
 today_dt = datetime.today().strftime("%Y%m%d")
 
 def read_krx_code():
@@ -12,10 +14,12 @@ def read_krx_code():
     KRX로부터 상장기업 목록을 읽어와 데이터프레임으로 반환
     """
     url = 'http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13'
-    krx = pd.read_html(url, header=0)[0]
+    krx = pd.read_html(url, header=0, encoding='euc-kr')[0]
     krx = krx[['종목코드', '회사명']]
     krx = krx.rename(columns={'종목코드': 'code', '회사명': 'company'})
-    krx['code'] = krx['code'].map('{:06d}'.format)
+
+    # 코드를 문자열로 변환 후 6자리 형식 적용
+    krx['code'] = krx['code'].astype(str).str.zfill(6)
     return krx
 
 def fetch_stock_price_data(code_list):
@@ -24,7 +28,7 @@ def fetch_stock_price_data(code_list):
     """
     price_list = []
     for cd in tqdm(code_list, desc="Fetching stock data"):
-        price_data = stock.get_market_ohlcv("20240301", today_dt, cd)
+        price_data = stock.get_market_ohlcv("20150101", "20221231", cd)
         price_data['코드'] = cd
         price_list.append(price_data)
     return pd.concat(price_list)
@@ -33,7 +37,7 @@ def setup_database_connection():
     """
     데이터베이스 연결 설정
     """
-    host_num = 'hystox74.synology.me'
+    host_num = get_db_host()
     return pymysql.connect(host=host_num, port=3307, db='investar',
                            user='stox7412', passwd='Apt106503!~', autocommit=True)
 
@@ -90,3 +94,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
