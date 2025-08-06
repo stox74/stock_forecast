@@ -1,6 +1,7 @@
+
 import pandas as pd
 import pymysql
-from DATA.stock_invest_function import *
+from stock_forecast.DATA.stock_invest_function import *
 from datetime import datetime
 from tqdm import tqdm
 from pykrx import stock
@@ -28,7 +29,7 @@ def fetch_stock_price_data(code_list):
     """
     price_list = []
     for cd in tqdm(code_list, desc="Fetching stock data"):
-        price_data = stock.get_market_ohlcv("20150101", "20221231", cd)
+        price_data = stock.get_market_ohlcv("20200101", "20221231", cd)
         price_data['코드'] = cd
         price_list.append(price_data)
     return pd.concat(price_list)
@@ -37,7 +38,7 @@ def setup_database_connection():
     """
     데이터베이스 연결 설정
     """
-    host_num = get_db_host()
+    host_num = 'hystox74.synology.me'
     return pymysql.connect(host=host_num, port=3307, db='investar',
                            user='stox7412', passwd='Apt106503!~', autocommit=True)
 
