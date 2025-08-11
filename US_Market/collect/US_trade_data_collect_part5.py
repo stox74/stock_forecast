@@ -95,7 +95,7 @@ def upload_trade_data_to_db(df, db_info, table_name='us_trade_data'):
 
 # 5. 실제 실행 영역 (api_key와 DB정보는 사용자 설정 필요)
 if __name__ == "__main__":
-    hs_code = hs_code[100:200]
+    hs_code = hs_code[400:500]
 
     # API 키 입력
     key = 'bf388499b71a365d725e1c888201736f7409d7e4'  # 실제 API 키로 교체 필요
