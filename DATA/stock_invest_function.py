@@ -702,3 +702,20 @@ def forecast_future_with_sarima(df, date_col='date', value_col='endog_var', exog
 
     return forecast_df
 
+
+def add_yoy_growth(df, value_column='value', group_column='root_hs_code', date_column='date'):
+    """
+    root_hs_code별로 value 컬럼의 연간 증가율을 계산하여 새로운 컬럼으로 추가합니다.
+    """
+    df = df.copy()
+    df[date_column] = pd.to_datetime(df[date_column])
+    df.sort_values(by=[group_column, date_column], inplace=True)
+
+    # YoY (12개월 전 대비 비율 변화율) 계산
+    df[f'{value_column}_yoy'] = (
+        df.groupby(group_column)[value_column]
+        .transform(lambda x: x.pct_change(periods=12))
+    )
+
+    return df
+

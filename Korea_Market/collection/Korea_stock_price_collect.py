@@ -1,7 +1,7 @@
 
 import pandas as pd
 import pymysql
-from stock_forecast.DATA.stock_invest_function import *
+from DATA.stock_invest_function import *
 from datetime import datetime
 from tqdm import tqdm
 from pykrx import stock
