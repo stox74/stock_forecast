@@ -1,0 +1,15 @@
+{
+  "start_time": "2025-08-22T23:36:13.919156",
+  "target_col": "sale",
+  "completed_tickers": [
+    "AAPL",
+    "GE",
+    "MMM",
+    "NVDA"
+  ],
+  "failed_tickers": [],
+  "current_batch": 0,
+  "total_saved_records": 0,
+  "last_checkpoint": null,
+  "end_time": "2025-08-22T23:36:30.435566"
+}
