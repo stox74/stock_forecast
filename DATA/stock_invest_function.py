@@ -719,3 +719,448 @@ def add_yoy_growth(df, value_column='value', group_column='root_hs_code', date_c
 
     return df
 
+# =============================================================================
+# UTILITY FUNCTIONS - DEPRECATED 함수들 수정
+# =============================================================================
+
+def is_categorical_column(series_or_dtype):
+    """
+    Series나 dtype이 categorical인지 확인하는 함수
+    pandas deprecated 함수 대신 사용
+    """
+    if hasattr(series_or_dtype, 'dtype'):
+        return isinstance(series_or_dtype.dtype, pd.CategoricalDtype)
+    else:
+        return isinstance(series_or_dtype, pd.CategoricalDtype)
+
+def analyze_dataframe_structure(df, df_name="DataFrame"):
+    """
+    DataFrame의 구조를 분석하고 value 컬럼을 식별하는 함수
+    """
+    print(f"\n{'='*50}")
+    print(f"ANALYZING {df_name.upper()} STRUCTURE")
+    print(f"{'='*50}")
+
+    # 기본 정보
+    print(f"Shape: {df.shape}")
+    print(f"Columns: {list(df.columns)}")
+
+    # 식별 컬럼들
+    id_columns = ['date', 'report_date', 'ticker', 'period', 'date_month']
+    available_id_cols = [col for col in id_columns if col in df.columns]
+    print(f"Available ID columns: {available_id_cols}")
+
+    # 기본 financial items
+    default_financial_items = [
+        'sale', 'cogs', 'gp', 'xrd', 'xsga', 'idit', 'xint', 'dp', 'ebitda',
+        'xopr', 'opiti', 'opir', 'pi', 'pir', 'txt', 'ni', 'nir', 'eps',
+        'epsdi', 'shrout', 'shroutdi'
+    ]
+
+    available_default_items = [col for col in default_financial_items if col in df.columns]
+    print(f"Available default financial items ({len(available_default_items)}): {available_default_items}")
+
+    # 추가 컬럼들 (ID도 아니고 기본 financial item도 아닌 것들)
+    other_columns = [col for col in df.columns
+                    if col not in available_id_cols and col not in available_default_items]
+
+    if other_columns:
+        print(f"Additional columns ({len(other_columns)}): {other_columns}")
+
+        # 숫자형 컬럼인지 확인
+        numeric_others = []
+        non_numeric_others = []
+
+        for col in other_columns:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                numeric_others.append(col)
+            else:
+                non_numeric_others.append(col)
+
+        if numeric_others:
+            print(f"  - Numeric (potential financial items): {numeric_others}")
+        if non_numeric_others:
+            print(f"  - Non-numeric: {non_numeric_others}")
+
+        return available_default_items + numeric_others
+
+    return available_default_items
+
+def add_fs_name_to_dataframes(is_df=None, bs_df=None, cf_df=None):
+    """기존 DataFrame들에 fs_name 컬럼을 추가하는 함수"""
+
+    results = {}
+
+    # Income Statement DataFrame에 fs_name 추가
+    if is_df is not None and not is_df.empty:
+        if 'fs_name' not in is_df.columns:
+            is_df = is_df.copy()
+            is_df['fs_name'] = 'is'
+            print("Added 'fs_name' = 'is' to is_df")
+        results['is_df'] = is_df
+
+    # Balance Sheet DataFrame에 fs_name 추가
+    if bs_df is not None and not bs_df.empty:
+        if 'fs_name' not in bs_df.columns:
+            bs_df = bs_df.copy()
+            bs_df['fs_name'] = 'bs'
+            print("Added 'fs_name' = 'bs' to bs_df")
+        results['bs_df'] = bs_df
+
+    # Cash Flow DataFrame에 fs_name 추가
+    if cf_df is not None and not cf_df.empty:
+        if 'fs_name' not in cf_df.columns:
+            cf_df = cf_df.copy()
+            cf_df['fs_name'] = 'cf'
+            print("Added 'fs_name' = 'cf' to cf_df")
+        results['cf_df'] = cf_df
+
+    return results
+
+def validate_long_format_data(df):
+    """Long format 데이터의 품질을 검증"""
+
+    print("\n" + "="*50)
+    print("DATA QUALITY VALIDATION")
+    print("="*50)
+
+    # 기본 정보
+    print(f"Total records: {len(df):,}")
+    if 'ticker' in df.columns:
+        print(f"Unique tickers: {df['ticker'].nunique():,}")
+    if 'item' in df.columns:
+        print(f"Unique items: {df['item'].nunique():,}")
+
+    # 결측값 체크
+    for col in ['ticker', 'date', 'item', 'value']:
+        if col in df.columns:
+            miss = df[col].isna().sum()
+            frac = (miss / len(df) * 100) if len(df) else 0
+            print(f"- {col}: {miss:,} missing ({frac:.1f}%)")
+
+    # 중복값 체크
+    key = [c for c in ['ticker', 'date', 'item'] if c in df.columns]
+    if key:
+        duplicates = df.duplicated(subset=key).sum()
+        print(f"\nDuplicate records ({'-'.join(key)}): {duplicates:,}")
+
+    # 값 분포
+    if 'value' in df.columns:
+        print(f"\nValue statistics:")
+        print(df['value'].describe())
+
+    # 티커별 레코드 수
+    if 'ticker' in df.columns:
+        ticker_counts = df['ticker'].value_counts()
+        print(f"\nRecords per ticker - Min: {ticker_counts.min()}, Max: {ticker_counts.max()}, Mean: {ticker_counts.mean():.0f}")
+
+    return df
+
+# =============================================================================
+# CORE CONVERSION FUNCTIONS (STREAMING / CHUNKED) - DEPRECATED 함수들 수정
+# =============================================================================
+
+def _prepare_ids_and_values(df, custom_value_vars):
+    """id_vars / value_vars 자동 추출 + 보정"""
+    # id 후보
+    id_vars_all = ['date', 'report_date', 'ticker', 'period', 'date_month']
+    id_vars = [c for c in id_vars_all if c in df.columns]
+
+    # 기본 재무항목
+    default_financial_items = [
+        'sale','cogs','gp','xrd','xsga','idit','xint','dp','ebitda',
+        'xopr','opiti','opir','pi','pir','txt','ni','nir','eps',
+        'epsdi','shrout','shroutdi'
+    ]
+    if custom_value_vars is not None:
+        base_vars = [c for c in custom_value_vars if c in df.columns]
+        print(f"Using custom value variables: {len(base_vars)} columns")
+    else:
+        base_vars = [c for c in default_financial_items if c in df.columns]
+
+    # 기본 리스트 외 컬럼도 자동 포함
+    other_cols = [c for c in df.columns if c not in id_vars and c not in base_vars]
+    if other_cols:
+        print(f"Additional financial columns detected: {other_cols}")
+        base_vars.extend(other_cols)
+
+    value_vars = base_vars
+
+    print(f"ID variables: {id_vars}")
+    print(f"Value variables: {value_vars}")
+    print(f"Total financial items: {len(value_vars)}")
+    return id_vars, value_vars
+
+def _optimize_dtypes_inplace(df):
+    """ticker/period을 category로, 날짜를 datetime으로, 숫자 다운캐스트 - deprecated 함수 수정"""
+    # ticker를 카테고리로 변환 (수정된 방식)
+    if 'ticker' in df.columns and not is_categorical_column(df['ticker']):
+        df['ticker'] = df['ticker'].astype('category')
+
+    # period을 카테고리로 변환
+    if 'period' in df.columns and df['period'].nunique() < 64:
+        df['period'] = df['period'].astype('category')
+
+    # 날짜 컬럼 처리
+    for dcol in ('date', 'report_date'):
+        if dcol in df.columns and not pd.api.types.is_datetime64_any_dtype(df[dcol]):
+            df[dcol] = pd.to_datetime(df[dcol], errors='coerce')
+
+def convert_wide_to_long(
+    df,
+    custom_value_vars=None,
+    fs_name=None,
+    col_chunk_size=16,      # 재무항목 수 청크
+    row_chunk_size=100_000, # 행 청크
+    do_sort=False
+):
+    """
+    메모리 안전 버전 - deprecated 함수들 수정:
+      - (1) value_vars를 col_chunk_size로 나눠서
+      - (2) 행도 row_chunk_size로 나눠서
+      - 순차 melt → concat
+    """
+    import math
+
+    # 사전 최적화
+    df_local = df.copy()
+    _optimize_dtypes_inplace(df_local)
+
+    # id / value 설정
+    id_vars, value_vars = _prepare_ids_and_values(df_local, custom_value_vars)
+
+    # 결과 조각 모으기
+    out_chunks = []
+    n_rows = len(df_local)
+    n_row_chunks = math.ceil(n_rows / row_chunk_size)
+
+    # 행-청크 루프
+    for r in range(n_row_chunks):
+        r0 = r * row_chunk_size
+        r1 = min(n_rows, (r+1) * row_chunk_size)
+        part = df_local.iloc[r0:r1, :].copy()
+
+        # 열-청크 루프
+        for c in range(0, len(value_vars), col_chunk_size):
+            vv = value_vars[c:c+col_chunk_size]
+
+            # melt (작은 조각)
+            melted = part.melt(
+                id_vars=id_vars,
+                value_vars=vv,
+                var_name='item',
+                value_name='value'
+            )
+
+            # 숫자 다운캐스트
+            melted['value'] = pd.to_numeric(melted['value'], errors='coerce', downcast='float')
+
+            # fs_name
+            if fs_name:
+                melted['fs_name'] = fs_name
+
+            # 카테고리화 (수정된 방식)
+            if not is_categorical_column(melted['item']):
+                melted['item'] = melted['item'].astype('category')
+            if 'fs_name' in melted.columns and not is_categorical_column(melted['fs_name']):
+                melted['fs_name'] = melted['fs_name'].astype('category')
+
+            out_chunks.append(melted)
+
+            # 메모리 회수
+            del melted
+            gc.collect()
+
+        del part
+        gc.collect()
+
+    # 최종 결합
+    if out_chunks:
+        long_df = pd.concat(out_chunks, ignore_index=True)
+        del out_chunks
+        gc.collect()
+    else:
+        long_df = pd.DataFrame(columns=id_vars + ['item', 'value'] + (['fs_name'] if fs_name else []))
+
+    # (선택) 정렬 — 대규모 데이터에서 메모리 피크 커지므로 기본 off
+    if do_sort:
+        sort_cols = [c for c in ['ticker', 'date', 'item'] if c in long_df.columns]
+        if sort_cols:
+            long_df = long_df.sort_values(sort_cols, kind='quicksort').reset_index(drop=True)
+
+    return long_df
+
+def convert_financial_data_to_long(df, statement_type="auto", fs_name=None,
+                                   col_chunk_size=16, row_chunk_size=100_000,
+                                   do_sort=False):
+    """
+    재무제표 유형에 따라 적절한 컬럼을 선택하여 long format으로 변환 (청크형)
+    """
+    if statement_type == "auto":
+        print("Auto-detecting statement type...")
+        is_matches = len([c for c in INCOME_STATEMENT_ITEMS if c in df.columns])
+        bs_matches = len([c for c in BALANCE_SHEET_ITEMS if c in df.columns])
+        cf_matches = len([c for c in CASH_FLOW_ITEMS if c in df.columns])
+        print(f"Column matches - IS: {is_matches}, BS: {bs_matches}, CF: {cf_matches}")
+
+        if is_matches >= bs_matches and is_matches >= cf_matches:
+            statement_type = "income"; target_items = INCOME_STATEMENT_ITEMS; fs_name = fs_name or "is"
+        elif bs_matches >= cf_matches:
+            statement_type = "balance"; target_items = BALANCE_SHEET_ITEMS; fs_name = fs_name or "bs"
+        else:
+            statement_type = "cash_flow"; target_items = CASH_FLOW_ITEMS; fs_name = fs_name or "cf"
+        print(f"Detected statement type: {statement_type} (fs_name: {fs_name})")
+    elif statement_type == "income":
+        target_items = INCOME_STATEMENT_ITEMS; fs_name = fs_name or "is"
+    elif statement_type == "balance":
+        target_items = BALANCE_SHEET_ITEMS; fs_name = fs_name or "bs"
+    elif statement_type == "cash_flow":
+        target_items = CASH_FLOW_ITEMS; fs_name = fs_name or "cf"
+    else:
+        raise ValueError("Invalid statement_type. Use 'income', 'balance', 'cash_flow', or 'auto'")
+
+    return convert_wide_to_long(
+        df,
+        custom_value_vars=target_items,
+        fs_name=fs_name,
+        col_chunk_size=col_chunk_size,
+        row_chunk_size=row_chunk_size,
+        do_sort=do_sort,
+    )
+
+# =============================================================================
+# MEMORY OPTIMIZED PROCESSING FUNCTION
+# =============================================================================
+
+def process_financial_data_individually(is_df=None, bs_df=None, cf_df=None):
+    """
+    메모리 최적화 버전 - 각 재무제표를 개별적으로만 long format으로 변환
+
+    Parameters:
+    -----------
+    is_df : DataFrame, optional
+        Income Statement 데이터프레임
+    bs_df : DataFrame, optional
+        Balance Sheet 데이터프레임
+    cf_df : DataFrame, optional
+        Cash Flow 데이터프레임
+
+    Returns:
+    --------
+    dict : {'IS': is_long, 'BS': bs_long, 'CF': cf_long}
+        각 재무제표의 long format 데이터프레임들을 담은 딕셔너리
+    """
+
+    # 파라미터가 없으면 전역 변수에서 찾기
+    if is_df is None:
+        is_df = globals().get('is_df', pd.DataFrame())
+    if bs_df is None:
+        bs_df = globals().get('bs_df', pd.DataFrame())
+    if cf_df is None:
+        cf_df = globals().get('cf_df', pd.DataFrame())
+
+    # 결과를 저장할 딕셔너리
+    results = {}
+
+    print("="*70)
+    print("MEMORY OPTIMIZED PROCESSING - INDIVIDUAL CONVERSION ONLY")
+    print("="*70)
+
+    # Income Statement 개별 처리
+    if not is_df.empty:
+        print("\n1. Processing Income Statement...")
+        print("-" * 40)
+
+        _ = analyze_dataframe_structure(is_df, "Income Statement")
+
+        is_long = convert_financial_data_to_long(
+            is_df.copy(),
+            statement_type="income",
+            fs_name="is",
+            col_chunk_size=8,      # 더 작은 청크로 안전하게
+            row_chunk_size=50_000,  # 행 청크도 줄임
+            do_sort=False
+        )
+
+        print(f"✓ IS Long format completed: {is_long.shape}")
+        results['IS'] = is_long
+
+        # 검증
+        print("\n[Income Statement Long Format Validation]")
+        validate_long_format_data(is_long)
+
+        # 메모리 정리
+        del is_long
+        gc.collect()
+    else:
+        print("\n1. Income Statement: No data provided")
+
+    # Balance Sheet 개별 처리
+    if not bs_df.empty:
+        print("\n2. Processing Balance Sheet...")
+        print("-" * 40)
+
+        _ = analyze_dataframe_structure(bs_df, "Balance Sheet")
+
+        bs_long = convert_financial_data_to_long(
+            bs_df.copy(),
+            statement_type="balance",
+            fs_name="bs",
+            col_chunk_size=8,
+            row_chunk_size=50_000,
+            do_sort=False
+        )
+
+        print(f"✓ BS Long format completed: {bs_long.shape}")
+        results['BS'] = bs_long
+
+        # 검증
+        print("\n[Balance Sheet Long Format Validation]")
+        validate_long_format_data(bs_long)
+
+        # 메모리 정리
+        del bs_long
+        gc.collect()
+    else:
+        print("\n2. Balance Sheet: No data provided")
+
+    # Cash Flow 개별 처리
+    if not cf_df.empty:
+        print("\n3. Processing Cash Flow...")
+        print("-" * 40)
+
+        _ = analyze_dataframe_structure(cf_df, "Cash Flow")
+
+        cf_long = convert_financial_data_to_long(
+            cf_df.copy(),
+            statement_type="cash_flow",
+            fs_name="cf",
+            col_chunk_size=8,
+            row_chunk_size=50_000,
+            do_sort=False
+        )
+
+        print(f"✓ CF Long format completed: {cf_long.shape}")
+        results['CF'] = cf_long
+
+        # 검증
+        print("\n[Cash Flow Long Format Validation]")
+        validate_long_format_data(cf_long)
+
+        # 메모리 정리
+        del cf_long
+        gc.collect()
+    else:
+        print("\n3. Cash Flow: No data provided")
+
+    print("\n" + "="*70)
+    print("INDIVIDUAL PROCESSING COMPLETED!")
+    print("="*70)
+    print(f"Created datasets: {list(results.keys())}")
+    print("\n✓ Memory optimized - No combined dataset created")
+    print("✓ Each dataset processed independently")
+    print("✓ Reduced memory footprint significantly")
+    print("✓ Fixed deprecated function warnings")
+
+    return results
+
