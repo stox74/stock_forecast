@@ -1164,3 +1164,44 @@ def process_financial_data_individually(is_df=None, bs_df=None, cf_df=None):
 
     return results
 
+
+def get_data_by_ticker(db_info: dict, table_name: str, ticker: str) -> pd.DataFrame:
+    """특정 ticker 데이터만 추출"""
+    try:
+        engine = create_engine(
+            f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
+            f"{db_info['host']}:{db_info['port']}/{db_info['database']}"
+        )
+
+        query = f"SELECT * FROM {table_name} WHERE ticker = '{ticker}' ORDER BY date"
+        df = pd.read_sql(query, con=engine)
+
+        print(f"✅ {ticker} 데이터 {len(df):,}건 조회 완료")
+        return df
+
+    except Exception as e:
+        print(f"❌ 조회 실패: {e}")
+        return pd.DataFrame()
+
+
+def get_market_cap_by_ticker(db_info: dict, ticker: str) -> pd.DataFrame:
+    """시가총액 데이터만 추출 (최적화)"""
+    try:
+        engine = create_engine(
+            f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
+            f"{db_info['host']}:{db_info['port']}/{db_info['database']}"
+        )
+
+        query = f"""
+       SELECT date, value FROM ks_listed_company_daily_marketcap 
+       WHERE ticker = '{ticker}' AND indicator = '시가총액' 
+       ORDER BY date
+       """
+
+        df = pd.read_sql(query, con=engine)
+        print(f"✅ {ticker} 시가총액 {len(df):,}건 조회 완료")
+        return df
+
+    except Exception as e:
+        print(f"❌ 조회 실패: {e}")
+        return pd.DataFrame()
