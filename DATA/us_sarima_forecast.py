@@ -1949,5 +1949,263 @@ def revenue_es_forecast_pipeline(data, revenue_col='revenue_billions', date_col=
         return None, None, None, None
 
 
+def create_revenue_forecast_result(sarima_data, lstm_data, prophet_data, es_data):
+    """
+    4개 모델의 예측 결과에서 필요한 컬럼을 추출하여 통합된 forecast result 생성
+
+    Parameters:
+    - sarima_data: SARIMA 예측 결과 데이터프레임
+    - lstm_data: LSTM 예측 결과 데이터프레임
+    - prophet_data: Prophet 예측 결과 데이터프레임
+    - es_data: Exponential Smoothing 예측 결과 데이터프레임
+
+    Returns:
+    - revenue_forecast_result: 통합된 예측 결과 데이터프레임
+    """
+
+    # 1. SARIMA 데이터에서 기본 구조 가져오기
+    base_columns = ['ticker', 'date_month_end'] if 'ticker' in sarima_data.columns else ['date_month_end']
+    revenue_forecast_result = sarima_data[base_columns + ['revenue_billions_forecast']].copy()
+
+    # 2. LSTM 예측 결과 병합
+    lstm_forecast = lstm_data[['date_month_end', 'revenue_billions_lstm_forecast']].copy()
+    revenue_forecast_result = pd.merge(revenue_forecast_result, lstm_forecast, on='date_month_end', how='outer')
+
+    # 3. Prophet 예측 결과 병합
+    prophet_forecast = prophet_data[['date_month_end', 'revenue_billions_prophet_forecast']].copy()
+    revenue_forecast_result = pd.merge(revenue_forecast_result, prophet_forecast, on='date_month_end', how='outer')
+
+    # 4. Exponential Smoothing 예측 결과 병합
+    es_forecast = es_data[['date_month_end', 'revenue_billions_es_forecast']].copy()
+    revenue_forecast_result = pd.merge(revenue_forecast_result, es_forecast, on='date_month_end', how='outer')
+
+    # 5. 날짜순으로 정렬 및 ticker 정보 처리
+    revenue_forecast_result = revenue_forecast_result.sort_values('date_month_end').reset_index(drop=True)
+    if 'ticker' in revenue_forecast_result.columns:
+        revenue_forecast_result['ticker'] = revenue_forecast_result['ticker'].fillna('AMAT')
+
+    return revenue_forecast_result
+
+
+def compare_forecast_models(forecast_df):
+    """모델별 예측값 비교 분석"""
+    forecast_columns = [
+        'revenue_billions_forecast',  # SARIMA
+        'revenue_billions_lstm_forecast',  # LSTM
+        'revenue_billions_prophet_forecast',  # Prophet
+        'revenue_billions_es_forecast'  # Exponential Smoothing
+    ]
+
+    complete_forecasts = forecast_df.dropna(subset=forecast_columns)
+    if len(complete_forecasts) == 0:
+        return None, None
+
+    # 모델별 통계
+    comparison_stats = {}
+    for col in forecast_columns:
+        model_name = col.replace('revenue_billions_', '').replace('_forecast', '')
+        comparison_stats[model_name] = {
+            'mean': complete_forecasts[col].mean(),
+            'std': complete_forecasts[col].std(),
+            'min': complete_forecasts[col].min(),
+            'max': complete_forecasts[col].max()
+        }
+
+    comparison_df = pd.DataFrame(comparison_stats).T
+    correlation_matrix = complete_forecasts[forecast_columns].corr()
+
+    return comparison_df, correlation_matrix
+
+
+# 함수 사용 예시 (실제 데이터가 있을 때만 실행)
+# def example_usage():
+#     """
+#     실제 사용 예시 - 데이터가 준비된 후에 호출하세요
+#     """
+#     print("=== 예측 결과 통합 예시 ===")
+#
+#     # 예시: 각 파이프라인 실행 후 결과 통합
+#     # sarima_result_data, _, _, _ = revenue_sarima_forecast_pipeline(data, ...)
+#     # lstm_result_data, _, _, _ = revenue_lstm_forecast_pipeline(data, ...)
+#     # prophet_result_data, _, _, _ = revenue_prophet_forecast_pipeline(data, ...)
+#     # es_result_data, _, _, _ = revenue_es_forecast_pipeline(data, ...)
+#
+#     # 통합된 예측 결과 생성
+#     # revenue_forecast_result = create_revenue_forecast_result(
+#     #     sarima_data=sarima_result_data,
+#     #     lstm_data=lstm_result_data,
+#     #     prophet_data=prophet_result_data,
+#     #     es_data=es_result_data
+#     # )
+#
+#     # 모델 비교 실행
+#     # comparison_stats, correlation_matrix = compare_forecast_models(revenue_forecast_result)
+#
+#     print("통합 함수들이 준비되었습니다.")
+#     print("실제 데이터로 파이프라인을 실행한 후 create_revenue_forecast_result() 함수를 사용하세요.")
+def calculate_ttm_with_shift(revenue_forecast_result, shift_months=2):
+    """
+    분기별 중복 데이터를 처리하여 정확한 TTM 계산 및 shift 적용
+
+    Process:
+    1. 분기별 중복 데이터에서 첫 번째 데이터만 추출 (분기 데이터)
+    2. 분기 데이터를 rolling(window=4)로 TTM 계산
+    3. TTM 데이터를 다시 월별로 확장
+    4. 결측치를 ffill(limit=2)로 보완
+    """
+    df = revenue_forecast_result.copy()
+    df['date_month_end'] = pd.to_datetime(df['date_month_end'])
+    df = df.sort_values('date_month_end').reset_index(drop=True)
+
+    # 티커별로 처리
+    result_dfs = []
+
+    for ticker in df['ticker'].unique():
+        ticker_df = df[df['ticker'] == ticker].copy()
+
+        forecast_columns = [
+            'revenue_billions_forecast',
+            'revenue_billions_lstm_forecast',
+            'revenue_billions_prophet_forecast',
+            'revenue_billions_es_forecast'
+        ]
+
+        existing_forecast_columns = [col for col in forecast_columns if col in ticker_df.columns]
+
+        # 1. 분기별 첫 번째 데이터만 추출 (중복 제거)
+        quarterly_data = extract_quarterly_data(ticker_df, existing_forecast_columns)
+
+        # 2. 분기 데이터로 TTM 계산 (4분기 rolling)
+        quarterly_ttm = calculate_quarterly_ttm(quarterly_data, existing_forecast_columns)
+
+        # 3. TTM 데이터를 월별로 확장
+        monthly_ttm = expand_quarterly_to_monthly(quarterly_ttm, ticker_df, existing_forecast_columns)
+
+        # 4. 원본 데이터와 병합
+        ticker_result = merge_ttm_data(ticker_df, monthly_ttm, existing_forecast_columns, shift_months)
+
+        result_dfs.append(ticker_result)
+
+    return pd.concat(result_dfs, ignore_index=True)
+
+
+def extract_quarterly_data(ticker_df, forecast_columns):
+    """
+    분기별 중복 데이터에서 첫 번째 데이터만 추출
+    분기 패턴 감지: 3개월 연속 동일한 값이 나타나는 패턴
+    """
+    quarterly_data = []
+
+    for col in forecast_columns:
+        if col not in ticker_df.columns:
+            continue
+
+        # 값의 변화점 찾기 (분기별 첫 데이터 추출)
+        values = ticker_df[col].values
+        dates = ticker_df['date_month_end'].values
+
+        # 첫 번째 데이터는 항상 포함
+        quarterly_indices = [0]
+
+        # 값이 변경되는 지점 찾기
+        for i in range(1, len(values)):
+            if values[i] != values[i - 1]:
+                quarterly_indices.append(i)
+
+        # 분기별 데이터 추출
+        quarterly_subset = ticker_df.iloc[quarterly_indices].copy()
+        quarterly_subset['quarter'] = pd.PeriodIndex(quarterly_subset['date_month_end'], freq='Q')
+
+        if len(quarterly_data) == 0:
+            quarterly_data = quarterly_subset[['date_month_end', 'quarter'] + [col]].copy()
+        else:
+            quarterly_data = quarterly_data.merge(
+                quarterly_subset[['date_month_end', col]],
+                on='date_month_end',
+                how='outer'
+            )
+
+    return quarterly_data.sort_values('date_month_end').reset_index(drop=True)
+
+
+def calculate_quarterly_ttm(quarterly_data, forecast_columns):
+    """
+    분기 데이터를 사용하여 TTM 계산 (4분기 rolling)
+    """
+    quarterly_ttm = quarterly_data.copy()
+
+    for col in forecast_columns:
+        if col in quarterly_ttm.columns:
+            ttm_col = col.replace('revenue_billions_', 'revenue_ttm_')
+            # 4분기 rolling sum으로 TTM 계산
+            quarterly_ttm[ttm_col] = quarterly_ttm[col].rolling(window=4, min_periods=1).sum()
+
+    return quarterly_ttm
+
+
+def expand_quarterly_to_monthly(quarterly_ttm, original_monthly_df, forecast_columns):
+    """
+    분기별 TTM 데이터를 월별로 확장
+    """
+    # 원본 월별 날짜 프레임 생성
+    monthly_dates = original_monthly_df[['date_month_end']].copy()
+    monthly_dates['quarter'] = pd.PeriodIndex(monthly_dates['date_month_end'], freq='Q')
+
+    # TTM 컬럼만 추출
+    ttm_columns = [col.replace('revenue_billions_', 'revenue_ttm_')
+                   for col in forecast_columns if col in quarterly_ttm.columns]
+
+    quarterly_ttm_subset = quarterly_ttm[['quarter'] + ttm_columns].copy()
+
+    # 분기별 TTM 데이터를 월별로 매핑
+    monthly_ttm = monthly_dates.merge(quarterly_ttm_subset, on='quarter', how='left')
+
+    # 결측치를 forward fill로 보완 (limit=2로 최대 2개월까지)
+    for col in ttm_columns:
+        if col in monthly_ttm.columns:
+            monthly_ttm[col] = monthly_ttm[col].fillna(method='ffill', limit=2)
+
+    return monthly_ttm[['date_month_end'] + ttm_columns]
+
+
+def merge_ttm_data(original_df, monthly_ttm, forecast_columns, shift_months):
+    """
+    원본 데이터와 TTM 데이터 병합 및 shift 적용
+    """
+    result_df = original_df.merge(monthly_ttm, on='date_month_end', how='left')
+
+    # Shift 적용
+    ttm_columns = [col.replace('revenue_billions_', 'revenue_ttm_')
+                   for col in forecast_columns if col in original_df.columns]
+
+    for ttm_col in ttm_columns:
+        if ttm_col in result_df.columns:
+            shifted_col = ttm_col + f'_shift{shift_months}m'
+            result_df[shifted_col] = result_df[ttm_col].shift(shift_months)
+
+    return result_df
+
+
+# 사용 예시 및 검증 함수
+def validate_ttm_calculation(result_df, ticker_sample='AMAT'):
+    """
+    TTM 계산 결과 검증
+    """
+    sample_data = result_df[result_df['ticker'] == ticker_sample].copy()
+
+    print(f"=== {ticker_sample} TTM 계산 결과 검증 ===")
+    print("\n원본 분기별 데이터 (중복 확인):")
+    print(sample_data[['date_month_end', 'revenue_billions_forecast']].head(12))
+
+    print(f"\nTTM 계산 결과:")
+    print(sample_data[['date_month_end', 'revenue_ttm_forecast', 'revenue_ttm_forecast_shift2m']].head(12))
+
+    # 중복 제거 확인: 분기별 첫 데이터만 다른지 확인
+    quarterly_check = sample_data.groupby(sample_data['date_month_end'].dt.to_period('Q'))[
+        'revenue_billions_forecast'].nunique()
+    print(f"\n분기별 고유값 개수 (모두 1이어야 함): \n{quarterly_check.head()}")
+
+    return sample_data
+
 if __name__ == "__main__":
     test_sarima_module()
