@@ -374,85 +374,85 @@ def create_prediction_dataframe(results, original_df):
 # 실행 예시 함수
 # ==============================================
 
-# def run_lstm_prediction(df, ticker='UNKNOWN', prediction_months=12, plot_results=True):
-#     """
-#     LSTM 예측 실행 메인 함수
-#
-#     Parameters:
-#     - df: 전처리된 데이터프레임
-#     - ticker: 종목명 (시각화용)
-#     - prediction_months: 예측할 개월 수
-#     - plot_results: 결과 시각화 여부
-#
-#     Returns:
-#     - tuple: (예측 결과 DataFrame, 모델 결과 딕셔너리)
-#     """
-#
-#     # LSTM 예측 수행
-#     results = predict_revenue_and_psr(
-#         df,
-#         prediction_periods=prediction_months,
-#         sequence_length=12
-#     )
-#
-#     if 'error' in results:
-#         return pd.DataFrame(), results
-#
-#     # 예측 결과 DataFrame 생성
-#     prediction_df = create_prediction_dataframe(results, df)
-#
-#     # 시각화
-#     if plot_results and len(prediction_df) > 0:
-#         # 훈련 히스토리
-#         plot_training_history(results['history'])
-#
-#         # 테스트 세트 예측 결과 (있는 경우)
-#         if 'test_actual' in results:
-#             plot_predictions(
-#                 results['test_dates'],
-#                 results['test_actual'],
-#                 results['test_predicted'],
-#                 results['target_columns'],
-#                 f"{ticker} - 테스트 세트 예측 결과"
-#             )
-#
-#         # 전체 데이터 + 미래 예측 시각화
-#         plt.figure(figsize=(15, 10))
-#
-#         # Revenue 예측
-#         plt.subplot(2, 1, 1)
-#         actual_mask = prediction_df['prediction_type'] == 'actual'
-#         forecast_mask = prediction_df['prediction_type'] == 'LSTM_forecast'
-#
-#         plt.plot(prediction_df[actual_mask]['date_month_end'],
-#                  prediction_df[actual_mask]['revenue_billions'],
-#                  'o-', label='실제 매출', color='blue')
-#         plt.plot(prediction_df[forecast_mask]['date_month_end'],
-#                  prediction_df[forecast_mask]['revenue_billions'],
-#                  's--', label='LSTM 예측', color='red')
-#         plt.title(f'{ticker} - 매출 예측 (Revenue Billions)')
-#         plt.ylabel('매출 (Billions)')
-#         plt.legend()
-#         plt.grid(True, alpha=0.3)
-#
-#         # PSR 예측
-#         plt.subplot(2, 1, 2)
-#         plt.plot(prediction_df[actual_mask]['date_month_end'],
-#                  prediction_df[actual_mask]['PSR_ttm'],
-#                  'o-', label='실제 PSR', color='green')
-#         plt.plot(prediction_df[forecast_mask]['date_month_end'],
-#                  prediction_df[forecast_mask]['PSR_ttm'],
-#                  's--', label='LSTM 예측', color='orange')
-#         plt.title(f'{ticker} - PSR TTM 예측')
-#         plt.xlabel('날짜')
-#         plt.ylabel('PSR TTM')
-#         plt.legend()
-#         plt.grid(True, alpha=0.3)
-#
-#         plt.tight_layout()
-#         plt.show()
-#
-#     return prediction_df, results
+def run_lstm_prediction(df, ticker='UNKNOWN', prediction_months=12, plot_results=True):
+    """
+    LSTM 예측 실행 메인 함수
+
+    Parameters:
+    - df: 전처리된 데이터프레임
+    - ticker: 종목명 (시각화용)
+    - prediction_months: 예측할 개월 수
+    - plot_results: 결과 시각화 여부
+
+    Returns:
+    - tuple: (예측 결과 DataFrame, 모델 결과 딕셔너리)
+    """
+
+    # LSTM 예측 수행
+    results = predict_revenue_and_psr(
+        df,
+        prediction_periods=prediction_months,
+        sequence_length=12
+    )
+
+    if 'error' in results:
+        return pd.DataFrame(), results
+
+    # 예측 결과 DataFrame 생성
+    prediction_df = create_prediction_dataframe(results, df)
+
+    # 시각화
+    if plot_results and len(prediction_df) > 0:
+        # 훈련 히스토리
+        plot_training_history(results['history'])
+
+        # 테스트 세트 예측 결과 (있는 경우)
+        if 'test_actual' in results:
+            plot_predictions(
+                results['test_dates'],
+                results['test_actual'],
+                results['test_predicted'],
+                results['target_columns'],
+                f"{ticker} - 테스트 세트 예측 결과"
+            )
+
+        # 전체 데이터 + 미래 예측 시각화
+        plt.figure(figsize=(15, 10))
+
+        # Revenue 예측
+        plt.subplot(2, 1, 1)
+        actual_mask = prediction_df['prediction_type'] == 'actual'
+        forecast_mask = prediction_df['prediction_type'] == 'LSTM_forecast'
+
+        plt.plot(prediction_df[actual_mask]['date_month_end'],
+                 prediction_df[actual_mask]['revenue_billions'],
+                 'o-', label='실제 매출', color='blue')
+        plt.plot(prediction_df[forecast_mask]['date_month_end'],
+                 prediction_df[forecast_mask]['revenue_billions'],
+                 's--', label='LSTM 예측', color='red')
+        plt.title(f'{ticker} - 매출 예측 (Revenue Billions)')
+        plt.ylabel('매출 (Billions)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+        # PSR 예측
+        plt.subplot(2, 1, 2)
+        plt.plot(prediction_df[actual_mask]['date_month_end'],
+                 prediction_df[actual_mask]['PSR_ttm'],
+                 'o-', label='실제 PSR', color='green')
+        plt.plot(prediction_df[forecast_mask]['date_month_end'],
+                 prediction_df[forecast_mask]['PSR_ttm'],
+                 's--', label='LSTM 예측', color='orange')
+        plt.title(f'{ticker} - PSR TTM 예측')
+        plt.xlabel('날짜')
+        plt.ylabel('PSR TTM')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+    return prediction_df, results
 
 
 # ==============================================
