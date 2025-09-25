@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Union
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
-
+from pandas.tseries.offsets import MonthEnd
 # =========================================================
 # 유틸
 # =========================================================
@@ -147,7 +147,77 @@ def run_es_prediction_v1(df: pd.DataFrame,
 
     return out_df, results
 
+# === us_est_forecast_v2.py 에 추가 ===
+def _to_month_end(x):
+    x = pd.to_datetime(x)
+    return x + MonthEnd(0)
 
+def _ensure_sorted_unique(df: pd.DataFrame) -> pd.DataFrame:
+    d = df.copy()
+    d["date_month_end"] = _to_month_end(d["date_month_end"])
+    d = d.sort_values("date_month_end").drop_duplicates("date_month_end").reset_index(drop=True)
+    return d
+
+def _filter_to_quarter_phase(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    입력 데이터에서 가장 일관된 분기 페이즈(01/04/07/10 or 02/05/08/11 등)를 자동 추정해 그 달만 남깁니다.
+    """
+    d = _ensure_sorted_unique(df)
+    months = d["date_month_end"].dt.month
+    # month%3 의 최빈값(0,1,2 중 하나)을 페이즈로 선택
+    phase = (months % 3).mode().iloc[0]
+    d = d[months % 3 == phase].reset_index(drop=True)
+    return d
+
+def run_es_revenue_quarterly(df: pd.DataFrame,
+                                 ticker: str = "UNKNOWN",
+                                 prediction_quarters: int = 4,
+                                 start_date: Optional[Union[str, pd.Timestamp]] = None
+                                   ) -> tuple[pd.DataFrame, dict]:
+    """
+    Exponential Smoothing으로 'revenue_billions'를 '분기 단위'로만 예측.
+    - 결과 인덱스는 분기 월말에 해당하는 행만 존재(월별 행 미생성).
+    - 과거=실제값, 미래=예측값을 'revenue_billions_esq_forecast'에 기록.
+    """
+    if "revenue_billions" not in df.columns:
+        raise ValueError("df에 'revenue_billions' 컬럼이 필요합니다.")
+
+    # 1) 분기 페이즈만 추출 (예: 01/31, 04/30, 07/31, 10/31)
+    qdf = _filter_to_quarter_phase(df[["date_month_end", "revenue_billions"]])
+    if qdf["revenue_billions"].notna().sum() < 6:
+        raise ValueError("분기 예측에는 최소 6개 이상의 유효 분기 데이터가 필요합니다.")
+
+    q_series = pd.Series(qdf["revenue_billions"].values,
+                         index=pd.to_datetime(qdf["date_month_end"])).dropna()
+
+    # 2) ES 모델 (분기 레벨, 계절성 없음)
+    model = ExponentialSmoothing(q_series, trend="add", seasonal=None, initialization_method="estimated")
+    fit = model.fit(optimized=True)
+
+    # 3) 미래 분기 인덱스 생성 (마지막 관측 분기와 동일한 페이즈로 +3개월씩)
+    last_q = _to_month_end(start_date) if start_date is not None else q_series.index.max()
+    future_quarters = [last_q + pd.DateOffset(months=3 * i) for i in range(1, int(prediction_quarters) + 1)]
+
+    # 4) 분기 예측
+    q_forecast = fit.forecast(int(prediction_quarters))
+    q_forecast.index = pd.to_datetime(future_quarters)
+
+    # 5) 출력: 분기 행만 존재하는 DataFrame 구축
+    out = qdf.copy()  # 이미 분기 페이즈만 남은 상태
+    out = out.sort_values("date_month_end").reset_index(drop=True)
+    col = "revenue_billions_esq_forecast"
+    out[col] = out["revenue_billions"]  # 과거 = 실제
+
+    # 미래 분기 행만 추가하여 예측값 기록
+    add = pd.DataFrame({"date_month_end": q_forecast.index, col: q_forecast.values})
+    out = pd.concat([out, add], ignore_index=True)
+    out = out.sort_values("date_month_end").set_index("date_month_end")
+
+    results = {
+        "meta": {"ticker": ticker, "target": "revenue_billions", "model": "ES-quarterly-strict"},
+        "forecast": q_forecast
+    }
+    return out, results
 
 if __name__ == '__main__':
     print("us_es_forecast_v1.py loaded. Use run_es_prediction_v1(...)")

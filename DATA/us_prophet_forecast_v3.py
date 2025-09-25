@@ -234,6 +234,60 @@ def run_prophet_prediction_v3(df: pd.DataFrame,
 
     return out_df, results
 
+def run_prophet_revenue_only(df: pd.DataFrame,
+                             ticker: str = 'UNKNOWN',
+                             prediction_quarters: int = 4,
+                             start_date: Optional[Union[str, pd.Timestamp]] = None
+                             ) -> tuple[pd.DataFrame, dict]:
+    """
+    Prophet으로 revenue_billions만 예측(PSR/외생변수 제외).
+    - 월별 예측 후 '각 분기 마지막 달'만 채우고 나머지 두 달은 ffill(limit=2)로 보간.
+    - prediction_quarters = 4 (4분기) / 8 (8분기) 등.
+    반환: (out_df, results)  / out_df는 date_month_end를 index로 정렬해서 반환.
+    """
+    df = ensure_sorted_unique_dates(df)
+    out_df = df.copy()
+
+    predictor = ProphetPredictor(use_exogenous=False)
+    fc = predictor.fit_and_predict(
+        df=df,
+        target_col='revenue_billions',
+        periods=prediction_quarters * 3,  # 분기 수 × 3개월
+        start_date=start_date,
+        exog_col=None
+    )
+
+    results = {'meta': {'ticker': ticker, 'target': 'revenue_billions'}, 'revenue': {}}
+
+    if fc is not None and len(fc) > 0:
+        # 월별(yhat) → 분기 마지막 달만 남기기 (i%3==2)
+        s = pd.Series(fc['yhat'].values, index=pd.to_datetime(fc['ds']))
+        keep_idx = [dt for i, dt in enumerate(s.index) if i % 3 == 2]
+        quarterly_series = s.loc[keep_idx]
+
+        # out_df에 예측 날짜 행 보강
+        add = pd.DataFrame({'date_month_end': pd.to_datetime(quarterly_series.index)})
+        out_df = (pd.merge(out_df, add, on='date_month_end', how='outer')
+                    .sort_values('date_month_end')
+                    .reset_index(drop=True))
+
+        col = "revenue_billions_prophet_forecast"
+        out_df.loc[out_df['date_month_end'].isin(quarterly_series.index), col] = \
+            out_df.loc[out_df['date_month_end'].isin(quarterly_series.index), 'date_month_end'].map(quarterly_series)
+
+        # 분기 마지막 달만 값이 있으므로 같은 분기의 앞 2개월을 ffill(limit=2)로 채움
+        out_df[col] = out_df[col].ffill(limit=2)
+
+        # 과거 구간은 실제값으로 채움
+        if 'revenue_billions' in out_df.columns:
+            out_df[col] = out_df[col].combine_first(out_df['revenue_billions'])
+
+        results['revenue']['forecast'] = fc[['ds', 'yhat']]
+
+    # 인덱스를 date_month_end로 설정하여 반환
+    out_df = out_df.sort_values('date_month_end').set_index('date_month_end')
+    return out_df, results
+
 
 if __name__ == '__main__':
     print("us_prophet_forecast_v3.py loaded. Use run_prophet_prediction_v3(...)")

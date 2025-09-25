@@ -23,152 +23,187 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Union
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-
-
+from pandas.tseries.offsets import MonthEnd
+from itertools import product
+from typing import Optional, Union, Tuple
 # =========================================================
 # 유틸 함수
 # =========================================================
 
-def to_month_end(s: Union[pd.Series, pd.DatetimeIndex, str, pd.Timestamp]) -> Union[pd.Series, pd.Timestamp]:
+# (이미 있으면 생략)
+def to_month_end(s):
     ts = pd.to_datetime(s)
     if isinstance(ts, pd.Timestamp):
-        return ts + pd.offsets.MonthEnd(0)
-    return ts + pd.offsets.MonthEnd(0)
-
+        return ts + MonthEnd(0)
+    return ts + MonthEnd(0)
 
 def ensure_sorted_unique_dates(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["date_month_end"] = to_month_end(df["date_month_end"])
-    df = df.sort_values("date_month_end").drop_duplicates(subset=["date_month_end"]).reset_index(drop=True)
-    return df
+    d = df.copy()
+    d["date_month_end"] = to_month_end(d["date_month_end"])
+    return d.sort_values("date_month_end").drop_duplicates(["date_month_end"]).reset_index(drop=True)
+
+def _filter_quarter_phase(df: pd.DataFrame) -> pd.DataFrame:
+    """월 자료에서도 분기 페이즈(월%3 최빈값)만 남김: 01/04/07/10 등."""
+    d = ensure_sorted_unique_dates(df)
+    phase = (d["date_month_end"].dt.month % 3).mode().iloc[0]
+    return d[d["date_month_end"].dt.month % 3 == phase].reset_index(drop=True)
+
+def find_best_sarima_params(
+    y_train: pd.Series,
+    exog_train: pd.Series | None = None,
+    seasonal_period: int = 12,
+    p_values=(0,1,2), d_values=(0,1), q_values=(0,1,2),
+    P_values=(0,1),   D_values=(0,1), Q_values=(0,1),
+    ic: str = "aic",
+    max_order_sum: int = 8,
+):
+    best_ic = np.inf
+    best_order = (1,1,1)
+    best_sorder = (1,1,0, seasonal_period)
+    for p,d,q in product(p_values, d_values, q_values):
+        for P,D,Q in product(P_values, D_values, Q_values):
+            if (p+q+P+Q) > max_order_sum:
+                continue
+            order = (p,d,q)
+            sorder = (P,D,Q, seasonal_period)
+            try:
+                m = SARIMAX(
+                    y_train.astype(float),
+                    exog=None if exog_train is None else exog_train.astype(float),
+                    order=order, seasonal_order=sorder,
+                    enforce_stationarity=False, enforce_invertibility=False
+                )
+                fit = m.fit(disp=False)
+                val = fit.aic if ic.lower()=="aic" else fit.bic
+                if np.isfinite(val) and val < best_ic:
+                    best_ic, best_order, best_sorder = val, order, sorder
+            except Exception:
+                continue
+    return best_order, best_sorder
 
 
-# =========================================================
-# SARIMA 실행 함수
-# =========================================================
-
-def run_sarima_prediction(df: pd.DataFrame,
-                          ticker: str = "UNKNOWN",
-                          forecast_quarters: int = 4,
-                          start_date_revenue: Optional[Union[str, pd.Timestamp]] = None,
-                          start_date_psr: Optional[Union[str, pd.Timestamp]] = None,
-                          exog_col: Optional[str] = None) -> tuple[pd.DataFrame, dict]:
+def run_sarima_prediction(
+        df: pd.DataFrame,
+        ticker: str = "UNKNOWN",
+        forecast_quarters: int = 4,
+        psr_periods: int = 12,  # 월간 예측 길이(12/24 등)
+        start_date_revenue: Optional[Union[str, pd.Timestamp]] = None,
+        start_date_psr: Optional[Union[str, pd.Timestamp]] = None,
+        exog_col: Optional[str] = None,
+        ic: str = "aic",
+) -> Tuple[pd.DataFrame, dict]:
     """
-    SARIMA 기반 매출(revenue_billions) + PSR_ttm 예측
+    반환을 항상 보장: (out_df, results)
+    - revenue_billions → 분기 예측(S=4)
+    - PSR_ttm(또는 월간 타깃) → 월 예측(S=12, psr_periods)
     """
-
-    df = ensure_sorted_unique_dates(df)
-    out_df = df.copy()
+    out_df = ensure_sorted_unique_dates(df)
     results = {"meta": {"ticker": ticker}, "revenue": {}, "psr": {}}
 
-    # ======================================================
-    # Revenue (분기별 예측)
-    # ======================================================
-    if "revenue_billions" in df.columns:
-        rev_series = df.set_index("date_month_end")["revenue_billions"].dropna()
-        if len(rev_series) >= 8:
-            exog_train = None
-            if exog_col and exog_col in df.columns:
-                exog_train = df.set_index("date_month_end")[exog_col].reindex(rev_series.index).fillna(0.0)
+    # ---------------- Revenue: Quarterly ----------------
+    try:
+        if "revenue_billions" in out_df.columns:
+            qdf = _filter_quarter_phase(out_df[["date_month_end","revenue_billions"]])
+            y = pd.Series(qdf["revenue_billions"].values, index=qdf["date_month_end"]).dropna()
+            if len(y) >= 8:
+                exog_hist = None
+                if exog_col and exog_col in out_df.columns:
+                    exog_hist = out_df.set_index("date_month_end")[exog_col].reindex(y.index).ffill().bfill()
 
-            # ---- NoExog ----
-            model_noexog = SARIMAX(rev_series, order=(1, 1, 1), seasonal_order=(1, 1, 0, 4),
-                                   enforce_stationarity=False, enforce_invertibility=False)
-            fit_noexog = model_noexog.fit(disp=False)
-            fc_noexog = fit_noexog.forecast(steps=forecast_quarters)
+                ord_ne, sord_ne = find_best_sarima_params(y, None, 4, ic=ic)
+                fit_ne = SARIMAX(y, order=ord_ne, seasonal_order=sord_ne,
+                                 enforce_stationarity=False, enforce_invertibility=False).fit(disp=False)
+                fc_ne = fit_ne.forecast(steps=forecast_quarters)
 
-            # ---- Exog ----
-            if exog_train is not None:
-                model_exog = SARIMAX(rev_series, exog=exog_train, order=(1, 1, 1),
-                                     seasonal_order=(1, 1, 0, 4),
-                                     enforce_stationarity=False, enforce_invertibility=False)
-                fit_exog = model_exog.fit(disp=False)
-                exog_future = np.repeat(exog_train.iloc[-1], forecast_quarters).reshape(-1, 1)
-                fc_exog = fit_exog.forecast(steps=forecast_quarters, exog=exog_future)
-            else:
-                fc_exog = None
+                fc_ex = None
+                if exog_hist is not None:
+                    ord_ex, sord_ex = find_best_sarima_params(y, exog_hist, 4, ic=ic)
+                    fit_ex = SARIMAX(y, exog=exog_hist, order=ord_ex, seasonal_order=sord_ex,
+                                     enforce_stationarity=False, enforce_invertibility=False).fit(disp=False)
+                    exog_future = np.repeat(exog_hist.iloc[-1], forecast_quarters).reshape(-1,1)
+                    fc_ex = fit_ex.forecast(steps=forecast_quarters, exog=exog_future)
 
-            # ---- 미래 날짜 (분기 단위) ----
-            last_date = rev_series.index[-1]
-            start_ts = to_month_end(start_date_revenue) if start_date_revenue else last_date
-            future_dates = [start_ts + pd.DateOffset(months=3 * i) for i in range(1, forecast_quarters + 1)]
+                last_q = y.index.max() if not start_date_revenue else to_month_end(start_date_revenue)
+                future_q = [last_q + pd.DateOffset(months=3*i) for i in range(1, forecast_quarters+1)]
 
-            # DF Merge
-            out_df["revenue_billions_sarima_noexog"] = out_df["revenue_billions"]
-            if exog_col:
-                out_df["revenue_billions_sarima_exog"] = out_df["revenue_billions"]
+                out_df["revenue_billions_sarima_noexog"] = out_df.get("revenue_billions")
+                if exog_hist is not None:
+                    out_df["revenue_billions_sarima_exog"] = out_df.get("revenue_billions")
 
-            for i, d in enumerate(future_dates):
-                if d not in out_df["date_month_end"].values:
-                    out_df.loc[len(out_df), "date_month_end"] = d
-                out_df.loc[out_df["date_month_end"] == d, "revenue_billions_sarima_noexog"] = fc_noexog.iloc[i]
-                if fc_exog is not None:
-                    out_df.loc[out_df["date_month_end"] == d, "revenue_billions_sarima_exog"] = fc_exog.iloc[i]
+                for i, d in enumerate(future_q):
+                    if d not in out_df["date_month_end"].values:
+                        out_df.loc[len(out_df), "date_month_end"] = d
+                    out_df.loc[out_df["date_month_end"] == d, "revenue_billions_sarima_noexog"] = fc_ne.iloc[i]
+                    if fc_ex is not None:
+                        out_df.loc[out_df["date_month_end"] == d, "revenue_billions_sarima_exog"] = fc_ex.iloc[i]
 
-            # 과거 NaN 보정
-            out_df["revenue_billions_sarima_noexog"] = \
-                out_df["revenue_billions_sarima_noexog"].combine_first(out_df["revenue_billions"])
-            if exog_col:
-                out_df["revenue_billions_sarima_exog"] = \
-                    out_df["revenue_billions_sarima_exog"].combine_first(out_df["revenue_billions"])
+                out_df["revenue_billions_sarima_noexog"] = \
+                    out_df["revenue_billions_sarima_noexog"].combine_first(out_df["revenue_billions"])
+                if "revenue_billions_sarima_exog" in out_df.columns:
+                    out_df["revenue_billions_sarima_exog"] = \
+                        out_df["revenue_billions_sarima_exog"].combine_first(out_df["revenue_billions"])
 
-            results["revenue"] = {"noexog": fc_noexog, "exog": fc_exog}
+                results["revenue"] = {
+                    "order": ord_ne, "seasonal_order": sord_ne,
+                    "forecast_noexog": fc_ne, "forecast_exog": fc_ex
+                }
+    except Exception as e:
+        results["revenue"]["error"] = str(e)
 
-    # ======================================================
-    # PSR (월별 예측, 12개월)
-    # ======================================================
-    if "PSR_ttm" in df.columns:
-        psr_series = df.set_index("date_month_end")["PSR_ttm"].dropna()
-        if len(psr_series) >= 12:
-            exog_train = None
-            if exog_col and exog_col in df.columns:
-                exog_train = df.set_index("date_month_end")[exog_col].reindex(psr_series.index).fillna(0.0)
+    # ---------------- PSR(or monthly target): Monthly ----------------
+    try:
+        target_col = "PSR_ttm" if "PSR_ttm" in out_df.columns else None
+        if target_col:
+            d = ensure_sorted_unique_dates(out_df[["date_month_end", target_col]])
+            full_idx = pd.date_range(d["date_month_end"].min(), d["date_month_end"].max(), freq="M")
+            y = pd.Series(d[target_col].values, index=d["date_month_end"]).reindex(full_idx).interpolate("time").ffill().bfill()
+            if y.notna().sum() >= 24:
+                exog_hist = None
+                if exog_col and exog_col in out_df.columns:
+                    exog_hist = out_df.set_index("date_month_end")[exog_col].reindex(y.index).ffill().bfill()
 
-            # ---- NoExog ----
-            model_noexog = SARIMAX(psr_series, order=(1, 1, 1), seasonal_order=(1, 1, 0, 12),
-                                   enforce_stationarity=False, enforce_invertibility=False)
-            fit_noexog = model_noexog.fit(disp=False)
-            fc_noexog = fit_noexog.forecast(steps=12)
+                ord_ne, sord_ne = find_best_sarima_params(y, None, 12, ic=ic)
+                fit_ne = SARIMAX(y, order=ord_ne, seasonal_order=sord_ne,
+                                 enforce_stationarity=False, enforce_invertibility=False).fit(disp=False)
+                fc_ne = fit_ne.forecast(steps=int(psr_periods))
 
-            # ---- Exog ----
-            if exog_train is not None:
-                model_exog = SARIMAX(psr_series, exog=exog_train, order=(1, 1, 1),
-                                     seasonal_order=(1, 1, 0, 12),
-                                     enforce_stationarity=False, enforce_invertibility=False)
-                fit_exog = model_exog.fit(disp=False)
-                exog_future = np.repeat(exog_train.iloc[-1], 12).reshape(-1, 1)
-                fc_exog = fit_exog.forecast(steps=12, exog=exog_future)
-            else:
-                fc_exog = None
+                fc_ex = None
+                if exog_hist is not None:
+                    ord_ex, sord_ex = find_best_sarima_params(y, exog_hist, 12, ic=ic)
+                    fit_ex = SARIMAX(y, exog=exog_hist, order=ord_ex, seasonal_order=sord_ex,
+                                     enforce_stationarity=False, enforce_invertibility=False).fit(disp=False)
+                    exog_future = np.repeat(exog_hist.iloc[-1], int(psr_periods)).reshape(-1,1)
+                    fc_ex = fit_ex.forecast(steps=int(psr_periods), exog=exog_future)
 
-            # ---- 미래 날짜 (월 단위) ----
-            last_date = psr_series.index[-1]
-            start_ts = to_month_end(start_date_psr) if start_date_psr else last_date
-            future_dates = [start_ts + pd.DateOffset(months=i) for i in range(1, 13)]
+                last_m = y.index.max() if not start_date_psr else to_month_end(start_date_psr)
+                future_m = pd.date_range(last_m + MonthEnd(1), periods=int(psr_periods), freq="M")
 
-            out_df["PSR_sarima_forecast_noexog"] = out_df["PSR_ttm"]
-            if exog_col:
-                out_df["PSR_sarima_forecast_exog"] = out_df["PSR_ttm"]
+                out_df[f"{target_col}_sarima_forecast_noexog"] = out_df.get(target_col)
+                if exog_hist is not None:
+                    out_df[f"{target_col}_sarima_forecast_exog"] = out_df.get(target_col)
 
-            for i, d in enumerate(future_dates):
-                if d not in out_df["date_month_end"].values:
-                    out_df.loc[len(out_df), "date_month_end"] = d
-                out_df.loc[out_df["date_month_end"] == d, "PSR_sarima_forecast_noexog"] = fc_noexog.iloc[i]
-                if fc_exog is not None:
-                    out_df.loc[out_df["date_month_end"] == d, "PSR_sarima_forecast_exog"] = fc_exog.iloc[i]
+                for i, d_ in enumerate(future_m):
+                    if d_ not in out_df["date_month_end"].values:
+                        out_df.loc[len(out_df), "date_month_end"] = d_
+                    out_df.loc[out_df["date_month_end"] == d_, f"{target_col}_sarima_forecast_noexog"] = fc_ne.iloc[i]
+                    if fc_ex is not None:
+                        out_df.loc[out_df["date_month_end"] == d_, f"{target_col}_sarima_forecast_exog"] = fc_ex.iloc[i]
 
-            # 과거 NaN 보정
-            out_df["PSR_sarima_forecast_noexog"] = \
-                out_df["PSR_sarima_forecast_noexog"].combine_first(out_df["PSR_ttm"])
-            if exog_col:
-                out_df["PSR_sarima_forecast_exog"] = \
-                    out_df["PSR_sarima_forecast_exog"].combine_first(out_df["PSR_ttm"])
+                out_df[f"{target_col}_sarima_forecast_noexog"] = \
+                    out_df[f"{target_col}_sarima_forecast_noexog"].combine_first(out_df[target_col])
+                if f"{target_col}_sarima_forecast_exog" in out_df.columns:
+                    out_df[f"{target_col}_sarima_forecast_exog"] = \
+                        out_df[f"{target_col}_sarima_forecast_exog"].combine_first(out_df[target_col])
 
-            results["psr"] = {"noexog": fc_noexog, "exog": fc_exog}
+                results["psr"] = {
+                    "order": ord_ne, "seasonal_order": sord_ne,
+                    "forecast_noexog": fc_ne, "forecast_exog": fc_ex
+                }
+    except Exception as e:
+        results["psr"]["error"] = str(e)
 
     out_df = out_df.sort_values("date_month_end").reset_index(drop=True)
     return out_df, results
-
 
 if __name__ == "__main__":
     print("us_sarima_forecast.py loaded. Use run_sarima_prediction(...)")
