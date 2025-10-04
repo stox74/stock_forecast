@@ -446,6 +446,116 @@ def run_lstm_revenue_prediction(df: pd.DataFrame,
     merged_df = add_revenue_forecast_to_df(df, results, prediction_quarters=prediction_quarters)
     return merged_df, results
 
+# =========================================================
+# PSR_ttm 전용 예측
+# =========================================================
+
+def predict_psr_only(df: pd.DataFrame,
+                     sequence_length: int = 12,
+                     prediction_periods: int = 12,
+                     train_split: float = 0.8,
+                     validation_split: float = 0.1) -> dict:
+    """
+    월 단위 PSR_ttm 예측 전용 파이프라인.
+    - 타깃: ['PSR_ttm']
+    - 반환: 모델/스케일러, 미래 12개월 예측(월별), 미래 날짜 등
+    """
+    target_cols = ['PSR_ttm']
+    pre = LSTMPreprocessor(sequence_length=sequence_length)
+
+    data = pre.prepare_data(df, target_cols=target_cols)
+    X, y = pre.create_sequences(data)
+    if len(X) == 0:
+        return {'error': '시퀀스 데이터 생성 실패'}
+
+    n = len(X)
+    n_train = int(n * train_split)
+    n_val = int(n * validation_split)
+
+    X_train, y_train = X[:n_train], y[:n_train]
+    X_val, y_val = (X[n_train:n_train+n_val], y[n_train:n_train+n_val]) if n_val > 0 else (None, None)
+    X_test, y_test = X[n_train+n_val:], y[n_train+n_val:]
+
+    model = LSTMModel(sequence_length=sequence_length, n_features=X.shape[2], n_targets=len(target_cols))
+    model.build()
+    model.train(X_train, y_train, X_val, y_val)
+
+    # 테스트 평가(있다면)
+    eval_results = None
+    if len(X_test) > 0:
+        y_pred = model.predict(X_test)
+        y_test_orig = pre.inverse_transform_targets(y_test)
+        y_pred_orig = pre.inverse_transform_targets(y_pred)
+        eval_results = evaluate_model(y_test_orig, y_pred_orig, target_cols)
+
+    # 미래 12개월 예측
+    last_seq = X[-1]
+    future_scaled = model.predict_future(last_seq, prediction_periods)
+    future = pre.inverse_transform_targets(future_scaled)
+
+    # 미래 날짜 (월말)
+    last_date = pd.to_datetime(data['dates'][-1])
+    future_dates = pd.date_range(start=last_date + pd.offsets.MonthEnd(1),
+                                 periods=prediction_periods, freq='M')
+
+    return {
+        'model': model,
+        'preprocessor': pre,
+        'evaluation': eval_results,
+        'future_predictions': future,   # shape: (12, 1)
+        'future_dates': future_dates,
+        'target_columns': target_cols,
+        'sequence_length': sequence_length
+    }
+
+
+def add_psr_forecast_to_df(original_df: pd.DataFrame, results: dict) -> pd.DataFrame:
+    """
+    원본 df에 PSR LSTM 예측 결과를 합치기.
+    - 'PSR_ttm_lstm_forecast' 컬럼 생성
+      과거 구간은 실제값(PSR_ttm), 미래 구간은 예측값으로 채움(월별 그대로).
+    """
+    if 'error' in results:
+        raise ValueError(results['error'])
+
+    df = ensure_sorted_unique_dates(original_df)
+
+    # 예측 벡터
+    future_dates = results['future_dates']
+    psr_monthly_pred = results['future_predictions'][:, 0]  # 단일 타깃
+
+    # 기존 값 복사(과거=실제)
+    if 'PSR_ttm' in df.columns:
+        df['PSR_ttm_lstm_forecast'] = df['PSR_ttm'].copy()
+    else:
+        df['PSR_ttm_lstm_forecast'] = np.nan
+
+    # 미래 날짜가 df에 없으면 행 추가
+    future_frame = pd.DataFrame({'date_month_end': future_dates})
+    df = pd.merge(df, future_frame, on='date_month_end', how='outer') \
+           .sort_values('date_month_end').reset_index(drop=True)
+
+    # 미래 구간 채우기
+    psr_series = pd.Series(psr_monthly_pred, index=future_dates)
+    sel = df['date_month_end'].isin(future_dates)
+    df.loc[sel, 'PSR_ttm_lstm_forecast'] = df.loc[sel, 'date_month_end'].map(psr_series)
+
+    return df
+
+
+def run_lstm_psr_prediction(df: pd.DataFrame,
+                            ticker: str = 'UNKNOWN',
+                            prediction_months: int = 12) -> tuple[pd.DataFrame, dict]:
+    """
+    엔드투엔드 실행 (PSR_ttm만 12개월 예측).
+    - 반환: (예측 컬럼이 병합된 DataFrame, 내부 결과 dict)
+    """
+    results = predict_psr_only(df, sequence_length=12, prediction_periods=prediction_months)
+    if 'error' in results:
+        return df.copy(), results
+
+    merged_df = add_psr_forecast_to_df(df, results)
+    return merged_df, results
 
 
 

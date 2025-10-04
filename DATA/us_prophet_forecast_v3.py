@@ -288,6 +288,77 @@ def run_prophet_revenue_only(df: pd.DataFrame,
     out_df = out_df.sort_values('date_month_end').set_index('date_month_end')
     return out_df, results
 
+def run_prophet_psr_only(df: pd.DataFrame,
+                         ticker: str = 'UNKNOWN',
+                         prediction_months: int = 12,
+                         start_date: Optional[Union[str, pd.Timestamp]] = None,
+                         use_exogenous: bool = False,
+                         exog_col: Optional[str] = None
+                         ) -> tuple[pd.DataFrame, dict]:
+    """
+    Prophet으로 PSR_ttm만 월별 예측.
+    - prediction_months: 예측 개월 수 (기본 12)
+    - start_date: 예측 시작 월말 (None이면 자동 설정: 데이터 마지막 월 + 1개월)
+    - use_exogenous: 외생변수 사용 여부
+    - exog_col: 외생변수 칼럼명 (use_exogenous=True일 때만 유효)
+    반환: (예측 칼럼이 병합된 DataFrame, 결과 dict)
+    """
+    # ✅ 1) 날짜 정규화 및 정렬
+    df = ensure_sorted_unique_dates(df)
+    out_df = df.copy()
+
+    # ✅ 2) start_date 자동 지정
+    if start_date is None:
+        last_date = pd.to_datetime(out_df['date_month_end'].max())
+        # 마지막 월의 다음 월 말일
+        start_date = (last_date + pd.offsets.MonthEnd(1)).normalize()
+
+    # ✅ 3) Prophet 예측 수행
+    predictor = ProphetPredictor(use_exogenous=use_exogenous)
+    fc = predictor.fit_and_predict(
+        df=df,
+        target_col='PSR_ttm',
+        periods=prediction_months,
+        start_date=start_date,
+        exog_col=(exog_col if use_exogenous else None)
+    )
+
+    # ✅ 4) 결과 저장
+    results = {
+        'meta': {
+            'ticker': ticker,
+            'target': 'PSR_ttm',
+            'prediction_months': prediction_months,
+            'start_date': pd.to_datetime(start_date),
+            'use_exogenous': use_exogenous,
+            'exog_col': exog_col
+        },
+        'psr': {}
+    }
+
+    if fc is not None and len(fc) > 0:
+        # ✅ 5) 예측 결과를 원본 df에 병합
+        s = pd.Series(fc['yhat'].values, index=pd.to_datetime(fc['ds']))
+        add = pd.DataFrame({'date_month_end': s.index})
+        out_df = (pd.merge(out_df, add, on='date_month_end', how='outer')
+                    .sort_values('date_month_end')
+                    .reset_index(drop=True))
+
+        col = "PSR_prophet_forecast_exog" if use_exogenous else "PSR_prophet_forecast_noexog"
+        out_df.loc[out_df['date_month_end'].isin(s.index), col] = \
+            out_df.loc[out_df['date_month_end'].isin(s.index), 'date_month_end'].map(s)
+
+        # 과거 구간 보정 (NaN → 실제값)
+        if 'PSR_ttm' in out_df.columns:
+            out_df[col] = out_df[col].combine_first(out_df['PSR_ttm'])
+
+        results['psr']['forecast'] = fc[['ds', 'yhat']]
+
+    # ✅ 6) 인덱스 정리
+    out_df = out_df.sort_values('date_month_end').set_index('date_month_end')
+    return out_df, results
+
+
 
 if __name__ == '__main__':
     print("us_prophet_forecast_v3.py loaded. Use run_prophet_prediction_v3(...)")
