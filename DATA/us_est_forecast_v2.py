@@ -219,5 +219,115 @@ def run_es_revenue_quarterly(df: pd.DataFrame,
     }
     return out, results
 
+# =========================
+# PSR_ttm 전용 ES 예측 함수
+# =========================
+def _next_month_end_after_max(df: pd.DataFrame,
+                              date_col: str = "date_month_end") -> pd.Timestamp:
+    """
+    df[date_col]의 최댓값을 월말로 정규화한 뒤, 그 '다음 달 말일'을 반환.
+    """
+    if date_col not in df.columns or df[date_col].isna().all():
+        raise ValueError(f"'{date_col}' 컬럼이 없거나 모두 NaN 입니다.")
+    max_dt = pd.to_datetime(df[date_col].max())
+    max_dt = to_month_end(max_dt)
+    return (max_dt + pd.offsets.MonthEnd(1)).normalize()
+
+
+def run_es_psr_only(df: pd.DataFrame,
+                    ticker: str = "UNKNOWN",
+                    prediction_months: int = 12,
+                    start_date: Optional[Union[str, pd.Timestamp]] = None
+                    ) -> tuple[pd.DataFrame, dict]:
+    """
+    Exponential Smoothing 으로 PSR_ttm만 월별 예측.
+    요구사항:
+      1) 입력 df의 date_month_end 최댓값 확인
+      2) 그 '다음 달 말일'부터 예측 시작
+      3) 12개월(또는 지정 개월) 동안 예측 실행
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        반드시 ['date_month_end', 'PSR_ttm'] 포함
+    ticker : str
+        종목 코드/이름(메타 정보)
+    prediction_months : int
+        예측 개월 수 (기본 12)
+    start_date : str | pd.Timestamp | None
+        사용자가 지정할 경우 시작 기준. 단, 지정 값이 데이터 max 월보다
+        과거/동일이면 자동으로 'max+1개월 말일'로 교정.
+    """
+    # 0) 방어 코드 및 정규화
+    if "PSR_ttm" not in df.columns:
+        raise ValueError("df에 'PSR_ttm' 컬럼이 필요합니다.")
+
+    d = ensure_sorted_unique_dates(df)
+    out_df = d.copy()
+
+    # 1) 자동 시작일 산정 (데이터 최댓값의 '다음 달 말일')
+    auto_start = _next_month_end_after_max(d, "date_month_end")
+
+    # 사용자가 start_date를 줬더라도, 데이터 max보다 과거/동일이면 자동값으로 교정
+    if start_date is None:
+        start_ts = auto_start
+    else:
+        start_ts = to_month_end(start_date)
+        max_dt = pd.to_datetime(d["date_month_end"].max())
+        if start_ts <= max_dt:
+            start_ts = auto_start
+
+    # 2) 시계열 구성
+    psr_series = pd.Series(d["PSR_ttm"].values,
+                           index=pd.to_datetime(d["date_month_end"])).dropna()
+    if psr_series.size < 6:
+        # 표본이 너무 적으면 예측 대신 원본만 반환
+        warn_msg = "PSR_ttm 유효 표본이 6개 미만으로 ES 예측을 수행하지 않습니다."
+        warnings.warn(warn_msg)
+        results = {
+            "meta": {"ticker": ticker, "target": "PSR_ttm", "model": "ES", "note": warn_msg},
+            "forecast": None
+        }
+        return out_df.set_index("date_month_end"), results
+
+    # 3) ES 모델 적합 (단순 추세형, 계절성 없음)
+    model = ExponentialSmoothing(psr_series, trend="add", seasonal=None, initialization_method="estimated")
+    fit = model.fit(optimized=True)
+
+    # 4) 미래 예측 범위(월말) 생성: 무조건 'start_ts의 다음 달'부터 prediction_months 개
+    future_idx = pd.date_range(start=start_ts, periods=prediction_months, freq="M")
+    fc = fit.forecast(prediction_months)
+    fc.index = future_idx  # 예측 인덱스를 우리가 만든 월말 인덱스로 치환
+
+    # 5) 결과 병합
+    col = "PSR_es_forecast"
+    # 예측 행(미래) 보강
+    add = pd.DataFrame({"date_month_end": future_idx})
+    out_df = (pd.merge(out_df, add, on="date_month_end", how="outer")
+                .sort_values("date_month_end")
+                .reset_index(drop=True))
+
+    mask = out_df["date_month_end"].isin(fc.index)
+    out_df.loc[mask, col] = out_df.loc[mask, "date_month_end"].map(fc)
+
+    # 과거 구간은 실제값으로 보정(예측 NaN -> 실제 PSR_ttm)
+    if "PSR_ttm" in out_df.columns:
+        out_df[col] = out_df[col].combine_first(out_df["PSR_ttm"])
+
+    results = {
+        "meta": {
+            "ticker": ticker,
+            "target": "PSR_ttm",
+            "model": "ES",
+            "prediction_months": int(prediction_months),
+            "data_max_date": pd.to_datetime(d["date_month_end"].max()),
+            "start_date_used": pd.to_datetime(start_ts),
+        },
+        "forecast": fc.rename("yhat")
+    }
+
+    return out_df.sort_values("date_month_end").set_index("date_month_end"), results
+
+
 if __name__ == '__main__':
     print("us_es_forecast_v1.py loaded. Use run_es_prediction_v1(...)")

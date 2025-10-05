@@ -79,11 +79,15 @@ class ProphetPredictor:
         model.fit(data)
 
         last_train = pd.to_datetime(data['ds'].max())
-        start_ts = last_train if start_date is None else to_month_end(start_date)
-        gap = month_offset(start_ts, last_train) if start_ts > last_train else 0
-        total_periods = gap + periods
+        # 시작 기준을 월말로 정규화
+        start_ts = (last_train + pd.offsets.MonthEnd(1)) if start_date is None else to_month_end(start_date)
 
+        # (마진 포함) 미래 프레임 생성
+        gap = max(0, month_offset(start_ts, last_train))
+        total_periods = gap + periods
         future = model.make_future_dataframe(periods=total_periods, freq='M')
+
+        # 외생변수
         if self.use_exogenous and exog_col and exog_col in data.columns:
             hist_exog = data[['ds', exog_col]]
             future = pd.merge(future, hist_exog, on='ds', how='left')
@@ -93,11 +97,22 @@ class ProphetPredictor:
             future[exog_col] = future[exog_col].ffill().bfill()
 
         forecast = model.predict(future)
-        forecast_slice = forecast[forecast['ds'] > start_ts].head(periods).copy()
-
         self.model = model
         self.forecast = forecast
-        return forecast_slice
+
+        # ✅ 예측 대상 월말 인덱스를 명시적으로 생성
+        target_idx = pd.date_range(start=start_ts, periods=periods, freq='M')
+
+        # ✅ Prophet 결과의 ds를 '월말'로 정규화 후 정렬/중복 제거
+        f = forecast[['ds', 'yhat']].copy()
+        f['ds'] = pd.to_datetime(f['ds']).dt.to_period('M').dt.to_timestamp('M')
+        f = f.drop_duplicates(subset='ds', keep='last').set_index('ds').sort_index()
+
+        # ✅ 우리가 원하는 달만 정확히 추출(누락 방지)
+        fc_slice = f.reindex(target_idx)
+
+        # 반환 형식 유지
+        return fc_slice.reset_index().rename(columns={'index': 'ds'})
 
 
 # =========================================================
@@ -307,11 +322,15 @@ def run_prophet_psr_only(df: pd.DataFrame,
     df = ensure_sorted_unique_dates(df)
     out_df = df.copy()
 
-    # ✅ 2) start_date 자동 지정
-    if start_date is None:
-        last_date = pd.to_datetime(out_df['date_month_end'].max())
-        # 마지막 월의 다음 월 말일
-        start_date = (last_date + pd.offsets.MonthEnd(1)).normalize()
+    # ✅ 2) 데이터의 마지막 월 확인 및 자동 start_date 설정
+    max_date = pd.to_datetime(out_df['date_month_end'].max())
+    auto_start_date = (max_date + pd.offsets.MonthEnd(1)).normalize()
+
+    # start_date가 None이면 자동 지정, 지정되어 있더라도 자동보다 이전이면 자동값으로 교체
+    if start_date is None or pd.to_datetime(start_date) <= max_date:
+        start_date = auto_start_date
+
+    print(f"[INFO] 예측 시작일: {start_date.strftime('%Y-%m-%d')} | 데이터 마지막 월: {max_date.strftime('%Y-%m-%d')}")
 
     # ✅ 3) Prophet 예측 수행
     predictor = ProphetPredictor(use_exogenous=use_exogenous)
@@ -329,7 +348,8 @@ def run_prophet_psr_only(df: pd.DataFrame,
             'ticker': ticker,
             'target': 'PSR_ttm',
             'prediction_months': prediction_months,
-            'start_date': pd.to_datetime(start_date),
+            'data_max_date': max_date,
+            'start_date_used': pd.to_datetime(start_date),
             'use_exogenous': use_exogenous,
             'exog_col': exog_col
         },
@@ -357,6 +377,22 @@ def run_prophet_psr_only(df: pd.DataFrame,
     # ✅ 6) 인덱스 정리
     out_df = out_df.sort_values('date_month_end').set_index('date_month_end')
     return out_df, results
+
+# =========================
+# PSR_ttm 전용 ES 예측 함수
+# =========================
+def _next_month_end_after_max(df: pd.DataFrame,
+                              date_col: str = "date_month_end") -> pd.Timestamp:
+    """
+    df[date_col]의 최댓값을 월말로 정규화한 뒤, 그 '다음 달 말일'을 반환.
+    """
+    if date_col not in df.columns or df[date_col].isna().all():
+        raise ValueError(f"'{date_col}' 컬럼이 없거나 모두 NaN 입니다.")
+    max_dt = pd.to_datetime(df[date_col].max())
+    max_dt = to_month_end(max_dt)
+    return (max_dt + pd.offsets.MonthEnd(1)).normalize()
+
+
 
 
 

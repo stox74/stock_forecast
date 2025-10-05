@@ -444,6 +444,9 @@ def run_lstm_revenue_prediction(df: pd.DataFrame,
         return df.copy(), results
 
     merged_df = add_revenue_forecast_to_df(df, results, prediction_quarters=prediction_quarters)
+    # ✅ 인덱스 초기화 (drop=True로 기존 인덱스 버림)
+    merged_df = merged_df.set_index('date_month_end')
+
     return merged_df, results
 
 # =========================================================
@@ -555,9 +558,8 @@ def run_lstm_psr_prediction(df: pd.DataFrame,
         return df.copy(), results
 
     merged_df = add_psr_forecast_to_df(df, results)
+    merged_df = merged_df.set_index('date_month_end')
     return merged_df, results
-
-
 
 # =========================================================
 # (모듈 사용 예시)
