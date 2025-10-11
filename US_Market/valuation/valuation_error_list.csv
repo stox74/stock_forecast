@@ -1,0 +1,2 @@
+﻿ticker,stage,error
+META,batch_flush,name 'OperationalError' is not defined

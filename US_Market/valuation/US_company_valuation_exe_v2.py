@@ -631,87 +631,103 @@ def _to_long(df: pd.DataFrame, category: str) -> pd.DataFrame:
     cols = ["ticker","category","model","start_month_end","start_value","end_value","growth","created_at"]
     return out[cols]
 
-# 1) 테이블 보장: 존재하지 않으면 생성하고, 유니크 키(ticker,category,model,start_month_end) 확보
-def ensure_table_with_unique(db_info: dict, table_name: str = "valuation_growth_long"):
+# 1) 테이블 보장: 존재하지 않으면 생성
+def _ddl(table_name: str, with_collate: bool = True, collation: str = "utf8mb4_0900_ai_ci") -> str:
+    tail = f"ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE={collation};" if with_collate else \
+           "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+    return f"""
+    CREATE TABLE IF NOT EXISTS `{table_name}` (
+      `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      `ticker` VARCHAR(16) NOT NULL,
+      `category` VARCHAR(32) NOT NULL,
+      `model` VARCHAR(64) NOT NULL,
+      `start_month_end` DATE NULL,
+      `start_value` DECIMAL(20,8) NULL,
+      `end_value` DECIMAL(20,8) NULL,
+      `growth` DECIMAL(20,8) NULL,
+      `created_at` DATETIME NOT NULL,
+      `created_ts` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      `updated_ts` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`),
+      KEY `idx_created_at` (`created_at`),
+      KEY `idx_ticker_created` (`ticker`, `created_at`),
+      UNIQUE KEY `uq_tk_ca_cat_model_start`
+        (`ticker`,`created_at`,`category`,`model`,`start_month_end`)
+    ) {tail}
+    """
+
+def _is_unknown_collation(err: Exception) -> bool:
+    # pymysql / mysqlclient 모두에서 1273 코드 또는 메시지 포함 여부로 감지
+    if "Unknown collation" in str(err):
+        return True
+    try:
+        code = getattr(getattr(err, "orig", err), "args", [None])[0]
+        return code == 1273
+    except Exception:
+        return False
+
+def ensure_valuation_table(db_info: dict, table_name: str = "us_valuation_result"):
     engine = create_engine(
         f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
-        f"{db_info['host']}:{db_info['port']}/{db_info['database']}"
+        f"{db_info['host']}:{db_info['port']}/{db_info['database']}?charset=utf8mb4"
     )
-    create_sql = f"""
-    CREATE TABLE IF NOT EXISTS `{table_name}` (
-      id BIGINT AUTO_INCREMENT PRIMARY KEY,
-      ticker VARCHAR(16) NOT NULL,
-      category VARCHAR(16) NOT NULL,
-      model VARCHAR(32) NOT NULL,
-      start_month_end DATE NOT NULL,
-      start_value DOUBLE NULL,
-      end_value DOUBLE NULL,
-      growth DOUBLE NULL,
-      created_at DATETIME NULL,
-      UNIQUE KEY uniq_{table_name} (ticker, category, model, start_month_end)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    """
     with engine.begin() as conn:
-        conn.exec_driver_sql(create_sql)
+        # 1) MySQL8 전용 콜레이션 시도
         try:
-            conn.exec_driver_sql(
-                f"ALTER TABLE `{table_name}` ADD UNIQUE KEY uniq_{table_name} (ticker, category, model, start_month_end);"
-            )
-        except Exception:
-            pass
-    engine.dispose()
+            conn.execute(text(_ddl(table_name, with_collate=True, collation="utf8mb4_0900_ai_ci")))
+            return
+        except Exception as e:
+            if not _is_unknown_collation(e):
+                raise
+        # 2) 광범위 호환 콜레이션 시도
+        try:
+            conn.execute(text(_ddl(table_name, with_collate=True, collation="utf8mb4_unicode_ci")))
+            return
+        except Exception as e2:
+            if not _is_unknown_collation(e2):
+                raise
+        # 3) COLLATE 제거 (서버 기본값 사용)
+        conn.execute(text(_ddl(table_name, with_collate=False)))
 
-# 2) 업서트(같은 키면 덮어쓰기)
-def upsert_long_to_db(long_df: pd.DataFrame, db_info: dict, table_name: str = "valuation_growth_long"):
-    if long_df is None or long_df.empty:
+def upsert_long_to_db_on_ticker_created_at(long_df: pd.DataFrame,
+                                           db_info: dict,
+                                           table_name: str = "us_valuation_result") -> int:
+    """
+    요구사항 #3:
+      - (ticker, created_at) 동일 묶음은 기존 레코드 삭제 후 일괄 insert → '갱신'
+      - 그 외는 누적(append)
+    전제:
+      long_df에는 최소 ['ticker','created_at']가 존재.
+    """
+    if long_df.empty:
         return 0
 
-    # 타입 정리
-    long_df = long_df.copy()
-    long_df["start_month_end"] = pd.to_datetime(long_df["start_month_end"], errors="coerce").dt.date
-    long_df["created_at"] = pd.to_datetime(long_df.get("created_at", pd.Timestamp.utcnow()))
-
-    rows = [
-        (
-            str(r["ticker"]),
-            str(r["category"]),
-            str(r["model"]),
-            r["start_month_end"],                                     # DATE
-            (None if pd.isna(r["start_value"]) else float(r["start_value"])),
-            (None if pd.isna(r["end_value"]) else float(r["end_value"])),
-            (None if pd.isna(r["growth"]) else float(r["growth"])),
-            r["created_at"].to_pydatetime(),                          # DATETIME
-        )
-        for _, r in long_df.iterrows()
-    ]
-
     engine = create_engine(
-        f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
-        f"{db_info['host']}:{db_info['port']}/{db_info['database']}"
+        f"mysql+pymysql://{db_info['user']}:{db_info['password']}@{db_info['host']}:{db_info['port']}/{db_info['database']}?charset=utf8mb4"
     )
-    ensure_table_with_unique(db_info, table_name)
 
-    sql = f"""
-    INSERT INTO `{table_name}`
-    (ticker, category, model, start_month_end, start_value, end_value, growth, created_at)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-    ON DUPLICATE KEY UPDATE
-        start_value = VALUES(start_value),
-        end_value   = VALUES(end_value),
-        growth      = VALUES(growth),
-        created_at  = VALUES(created_at);
-    """
+    # 안전을 위해 필요한 열만 제한적으로 사용(없으면 생성)
+    needed_cols = ['ticker','category','model','start_month_end','start_value','end_value','growth','created_at']
+    for c in needed_cols:
+        if c not in long_df.columns:
+            long_df[c] = np.nan
+    use_df = long_df[needed_cols].copy()
 
-    conn = engine.raw_connection()
-    try:
-        cur = conn.cursor()
-        cur.executemany(sql, rows)
-        conn.commit()
-        affected = cur.rowcount
-        cur.close()
-    finally:
-        conn.close()
-        engine.dispose()
+    affected = 0
+    with engine.begin() as conn:
+        # (ticker, created_at) 조합별로 삭제 후 insert
+        grp_cols = ['ticker','created_at']
+        for (tk, ca), g in use_df.groupby(grp_cols):
+            # 1) delete
+            del_sql = f"""
+                DELETE FROM {table_name}
+                WHERE ticker = :ticker AND created_at = :created_at
+            """
+            conn.execute(text(del_sql), {'ticker': str(tk), 'created_at': pd.to_datetime(ca)})
+
+            # 2) insert
+            g.to_sql(table_name, conn, if_exists='append', index=False)
+            affected += len(g)
 
     return affected
 
@@ -837,7 +853,7 @@ if __name__ == "__main__":
 
 
     start_idx = 0
-    end_idx = 200
+    end_idx = 100
     BATCH_SIZE = 20
 
     # 결과/상태 누적
@@ -850,7 +866,6 @@ if __name__ == "__main__":
 
     # 대상 티커 슬라이싱
     target_tickers = ticker_list[start_idx:end_idx]
-
     # 메인 시작 시 1회:
     # 메인 시작 시 1회: 커버리지 점검 + US_fundm 미존재 티커 CSV 저장
     miss_q, miss_m = audit_db_coverage(db_info, target_tickers)
@@ -862,17 +877,46 @@ if __name__ == "__main__":
     else:
         log("AUDIT-SAVE", "US_fundm missing tickers: 0 (no file saved)")
 
+
     def _flush_batch_and_upload(batch_results, db_info):
-        """배치 → 성장요약 → long → DB 업서트 + 메모리 정리"""
-        global total_upsert_rows  # ✅ nonlocal → global 로 수정
+        """
+        배치 → 성장요약 → long 두 종류(valuation, str=revenues) → DB 업서트
+        """
+        global total_upsert_rows
         if not batch_results:
             return
+
+        ensure_valuation_table(db_info, table_name="us_valuation_result")
+
         try:
-            final_valuation_df_batch = pd.concat(batch_results, axis=0, ignore_index=True)
-            _, val_summary_batch = make_growth_summaries(final_valuation_df_batch)
-            long_df_batch = _to_long(val_summary_batch, 'valuation')
-            affected = upsert_long_to_db(long_df_batch, db_info, table_name="us_valuation_result")
+            final_df = pd.concat(batch_results, axis=0, ignore_index=True)
+
+            # make_growth_summaries가 (rev_summary, val_summary) 형태를 반환한다고 가정
+            rev_summary_batch, val_summary_batch = make_growth_summaries(final_df)
+
+            # --- valuation long ---
+            long_val = _to_long(val_summary_batch, category='valuation')
+
+            # --- revenue long (카테고리=str, 모델명 통일) ---
+            long_rev = _to_long(rev_summary_batch, category='revenue')
+            # 모델명 표준화
+            model_map = {
+                'revenue_billions_sarima_noexog_ttm': 'revenue_sarima',
+                'revenue_billions_lstm_forecast_ttm': 'revenue_lstm',
+                'revenue_billions_prophet_forecast_ttm': 'revenue_prophet',
+                'revenue_billions_esq_forecast_ttm': 'revenue_es',
+                'revenue_billions_avg_of_4_ttm': 'revenue_avg_of_4'
+            }
+            if 'model' in long_rev.columns:
+                long_rev['model'] = long_rev['model'].replace(model_map)
+
+            # --- 두 long 합치기 ---
+            final_long = pd.concat([long_val, long_rev], axis=0, ignore_index=True)
+
+            # --- 업서트 (요구사항 #3 반영: ticker+created_at 기준 갱신, 아니면 누적) ---
+            affected = upsert_long_to_db_on_ticker_created_at(final_long, db_info, table_name="us_valuation_result")
             total_upsert_rows += int(affected or 0)
+            log("BATCH-UPLOADED", f"rows={affected}, total_upsert_rows={total_upsert_rows}")
         finally:
             del batch_results[:]
             gc.collect()
@@ -1066,31 +1110,77 @@ if __name__ == "__main__":
             error_ticker_list.append({'ticker': ticker, 'stage': 'psr_forecast', 'error': str(e)})
             continue
 
-        # 7) Valuation 종합
+        # 7) Valuation 종합  (수정 버전: 날짜 인덱스 정렬 + inner join)
         try:
-            sarima_resize_df = sarima_df[['ticker', 'revenue_billions_sarima_noexog']].copy()
-            lstm_resize_df = lstm_df[['revenue_billions_lstm_forecast']].copy()
-            prophet_resize_df = prophet_raw_df[['revenue_billions_prophet_forecast']].copy()
-            es_resize_df = es_raw_df[['revenue_billions_esq_forecast']].copy()
+            # ---- (1) 각 예측 결과에 date_month_end 붙이고 인덱스로 정렬 ----
+            def _pick(df, cols):
+                # date_month_end 보장 + 중복 제거
+                d = df.copy()
+                if 'date_month_end' not in d.columns:
+                    # 가능하면 인덱스가 날짜인 경우를 대비
+                    d = d.reset_index()
+                    if 'date_month_end' not in d.columns and 'index' in d.columns:
+                        d = d.rename(columns={'index': 'date_month_end'})
+                d = d.drop_duplicates(subset=['date_month_end']).sort_values('date_month_end')
+                return d[['date_month_end'] + cols].set_index('date_month_end')
 
-            revenue_forecast_df = pd.concat([sarima_resize_df, lstm_resize_df, prophet_resize_df, es_resize_df], axis=1)
 
-            psr_sarima_resiae = psr_sarima_df[['PSR_ttm_sarima_forecast']]
-            psr_lstm_resiae = psr_lstm_df[['PSR_ttm_lstm_forecast']]
-            psr_prophet_resiae = psr_prophet_df[['PSR_prophet_forecast_noexog']]
-            psr_es_resiae = psr_es_df[['PSR_es_forecast']]
-            psr_forecast_df = pd.concat([psr_sarima_resiae, psr_lstm_resiae, psr_prophet_resiae, psr_es_resiae], axis=1)
+            rev_sarima = _pick(sarima_df, ['revenue_billions_sarima_noexog'])
+            rev_lstm = _pick(lstm_df, ['revenue_billions_lstm_forecast'])
+            rev_prophet = _pick(prophet_raw_df, ['revenue_billions_prophet_forecast'])
+            rev_es = _pick(es_raw_df, ['revenue_billions_esq_forecast'])
 
-            revenue_forecast_ = prepare_revenue_ttm(revenue_forecast_df)
-            revenue_forecast_ttm = revenue_forecast_.filter(like='_ttm')
-            revenue_forecast_ttm['ticker'] = ticker
+            # ---- (2) 4개 revenue 예측 wide ----
+            revenue_forecast_df = pd.concat([rev_sarima, rev_lstm, rev_prophet, rev_es], axis=1, join='outer')
 
-            valuation_df = pd.concat([revenue_forecast_ttm, psr_forecast_df], axis=1)
+            # ---- (3) TTM 변환 + 평균 (함수는 date_month_end 컬럼 필요하므로 reset_index) ----
+            revenue_forecast_df_reset = revenue_forecast_df.reset_index()  # date_month_end 컬럼 생성
+            # ✅ 여기 두 줄 추가!
+            if 'ticker' not in revenue_forecast_df_reset.columns:
+                revenue_forecast_df_reset['ticker'] = ticker
 
+            revenue_forecast_ = prepare_revenue_ttm(revenue_forecast_df_reset)
+            # prepare_revenue_ttm 결과에서 TTM 컬럼만 추출
+            revenue_forecast_ttm = revenue_forecast_.filter(like='_ttm').copy()
+            # 날짜 복원 후 인덱스 설정
+
+            if 'ticker' not in revenue_forecast_df_reset.columns or revenue_forecast_df_reset['ticker'].isna().all():
+                raise ValueError("ticker 칼럼이 필요합니다. (Valuation pack 직전)")
+
+            if 'date_month_end' not in revenue_forecast_.columns:
+                # prepare_revenue_ttm 내부에서 날짜를 보존하지 않는 경우 대비
+                revenue_forecast_ttm['date_month_end'] = revenue_forecast_df_reset['date_month_end'].values
+            else:
+                revenue_forecast_ttm['date_month_end'] = revenue_forecast_['date_month_end'].values
+            revenue_forecast_ttm = revenue_forecast_ttm.drop_duplicates(subset=['date_month_end']).set_index(
+                'date_month_end')
+
+            # 평균 TTM
+            revenue_cols_ttm = [
+                'revenue_billions_sarima_noexog_ttm',
+                'revenue_billions_lstm_forecast_ttm',
+                'revenue_billions_prophet_forecast_ttm',
+                'revenue_billions_esq_forecast_ttm'
+            ]
+            revenue_forecast_ttm['revenue_billions_avg_of_4_ttm'] = revenue_forecast_ttm[revenue_cols_ttm].mean(axis=1)
+
+            # ---- (4) PSR 예측도 날짜 인덱스 정렬 ----
+            psr_sarima = _pick(psr_sarima_df, ['PSR_ttm_sarima_forecast'])
+            psr_lstm = _pick(psr_lstm_df, ['PSR_ttm_lstm_forecast'])
+            psr_prophet = _pick(psr_prophet_df, ['PSR_prophet_forecast_noexog'])
+            psr_es = _pick(psr_es_df, ['PSR_es_forecast'])
+            psr_forecast_df = pd.concat([psr_sarima, psr_lstm, psr_prophet, psr_es], axis=1, join='outer')
+
+            # ---- (5) 날짜 기준 inner-join → 공통 구간만 결합 ----
+            valuation_df = revenue_forecast_ttm.join(psr_forecast_df, how='inner')
+            valuation_df['ticker'] = ticker  # 티커 부여
+
+            # ---- (6) ffill (ticker + revenue 계열만) ----
             valuation_filled = valuation_df.copy()
-            cols_to_fill = ['ticker'] + [c for c in valuation_filled.columns if 'revenue' in c]
-            valuation_filled[cols_to_fill] = valuation_filled[cols_to_fill].ffill(limit=2)
+            cols_to_ffill = ['ticker'] + [c for c in valuation_filled.columns if 'revenue_billions' in c]
+            valuation_filled[cols_to_ffill] = valuation_filled[cols_to_ffill].ffill(limit=2)
 
+            # ---- (7) Valuation 계산 ----
             valuation_filled['sarima_valuation'] = valuation_filled['revenue_billions_sarima_noexog_ttm'] * \
                                                    valuation_filled['PSR_ttm_sarima_forecast']
             valuation_filled['lstm_valuation'] = valuation_filled['revenue_billions_lstm_forecast_ttm'] * \
@@ -1100,22 +1190,26 @@ if __name__ == "__main__":
             valuation_filled['es_valuation'] = valuation_filled['revenue_billions_esq_forecast_ttm'] * valuation_filled[
                 'PSR_es_forecast']
 
-            if 'date_month_end' in valuation_filled.columns:
-                valuation_filled = valuation_filled.sort_values('date_month_end')
-                valuation_result = valuation_filled.groupby('ticker').tail(15).reset_index(drop=True)
-            else:
-                valuation_filled = valuation_filled.sort_index()
-                valuation_result = valuation_filled.groupby('ticker').tail(15).reset_index()
+            # ---- (8) 최신 15개만 ----
+            valuation_filled = valuation_filled.sort_index()
+            valuation_result = (
+                valuation_filled
+                .groupby('ticker', group_keys=False)
+                .apply(lambda d: d.tail(15))
+                .reset_index()
+                .rename(columns={'index': 'date_month_end'})
+            )
 
             batch_results.append(valuation_result)
             total_success_tickers += 1
             log("OK-VAL-PACK", f"{ticker} packed={len(valuation_result)} batch={len(batch_results)}")
+
         except Exception as e:
             log("EXC-VAL-PACK", f"{ticker} e={e} tb={traceback.format_exc().splitlines()[-1]}")
             error_ticker_list.append({'ticker': ticker, 'stage': 'valuation_pack', 'error': str(e)})
             continue
 
-        # 8) 배치 업로드
+        # 9) 배치 업로드  (복구)
         try:
             is_last = (idx == len(target_tickers))
             if (len(batch_results) >= BATCH_SIZE) or is_last:
@@ -1125,15 +1219,14 @@ if __name__ == "__main__":
             log("EXC-BATCH-FLUSH", f"{ticker} e={e} tb={traceback.format_exc().splitlines()[-1]}")
             error_ticker_list.append({'ticker': ticker, 'stage': 'batch_flush', 'error': str(e)})
 
-        # 9) 메모리 정리
+
+        # 10) 메모리 정리
         try:
             del (revenue_data, fmp_revenue_df, db_revenue_raw, db_revenue_df, mereged_rev_data,
                  rev_data, sarima_df, lstm_raw_df, lstm_df, prophet_raw_df, es_raw_df,
                  market_data, fmp_market_df, db_market_df, merged_market_df, enhanced_merged_df,
                  market_cap_resize, enhanced_merged_df_with_ttm, psr_sarima_df, psr_lstm_df,
-                 psr_prophet_df, psr_es_df, sarima_resize_df, lstm_resize_df, prophet_resize_df,
-                 es_resize_df, revenue_forecast_df, psr_sarima_resiae, psr_lstm_resiae,
-                 psr_prophet_resiae, psr_es_resiae, revenue_forecast_, revenue_forecast_ttm,
+                 psr_prophet_df, psr_es_df, revenue_forecast_df, revenue_forecast_, revenue_forecast_ttm,
                  valuation_df, valuation_filled, valuation_result)
             gc.collect()
         except Exception as e:
