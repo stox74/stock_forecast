@@ -1,2 +1,5 @@
 ﻿ticker,stage,error
-META,batch_flush,name 'OperationalError' is not defined
+ECG,revenue_forecast,데이터가 부족합니다. 최소 13개의 유효한 관측치가 필요합니다.
+HL,valuation_pack,"""['PSR_ttm_sarima_forecast'] not in index"""
+HTO,psr_prepare,PSR series too short after TTM shift
+INVX,psr_forecast,데이터가 부족합니다. 최소 13개의 유효한 관측치가 필요합니다.

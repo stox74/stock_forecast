@@ -852,8 +852,8 @@ if __name__ == "__main__":
     measurement_date = pd.Timestamp.today().strftime('%Y-%m-%d')
 
 
-    start_idx = 0
-    end_idx = 100
+    start_idx = 480
+    end_idx = 600
     BATCH_SIZE = 20
 
     # 결과/상태 누적
