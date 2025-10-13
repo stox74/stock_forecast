@@ -3,25 +3,21 @@ from typing import Dict, Tuple, List
 import pandas as pd
 import numpy as np
 import traceback
-from config import START_DATE_MONTH, END_DATE_MONTH, log
-from DATA import stock_invest_function as SIF  # 기존 프로젝트 함수 모듈 별칭
+from .config import START_DATE_MONTH, END_DATE_MONTH, log
 
 def process_one_ticker(
     ticker: str,
     api_key: str,
     db_info: Dict[str,str],
+    fx: Dict[str, object],
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict]]:
     """
-    한 종목 처리 후
-    - enhanced_merged_df (PSR 계산에 쓰인 마켓/매출 결합 데이터)
-    - valuation_result (최종 15개 행)
-    - error_list (에러 발생시 기록)
-    를 반환
+    fx: adapters.build_fx()로 받은 함수/모듈 dict
     """
     error_list: List[Dict] = []
     try:
         # 1) FMP 매출
-        revenue_data, err = SIF.fetch_revenue_data(ticker, api_key)
+        revenue_data, err = fx["fetch_revenue_data"](ticker, api_key)
         if revenue_data is None:
             raise RuntimeError(f"FMP revenue fetch failed: {err}")
         all_revenue_data = [{
@@ -34,14 +30,14 @@ def process_one_ticker(
         } for it in revenue_data]
         fmp_rev = pd.DataFrame(all_revenue_data)
         fmp_rev['date'] = pd.to_datetime(fmp_rev['date'])
-        fmp_rev['date_month_end'] = SIF.to_month_end_safe(fmp_rev['date'])
+        fmp_rev['date_month_end'] = fx["to_month_end_safe"](fmp_rev['date'])
         fmp_rev = (fmp_rev.dropna(subset=['date_month_end'])
                            .drop_duplicates(subset=['date_month_end'])
                            .sort_values('date_month_end')
                            .reset_index(drop=True))
 
         # 2) DB 매출
-        db_rev_raw = SIF.fetch_db_revenue_data(ticker, db_info)
+        db_rev_raw = fx["fetch_db_revenue_data"](ticker, db_info)
         if db_rev_raw is not None and not db_rev_raw.empty:
             db_rev = db_rev_raw.loc[db_rev_raw['revenue_billions'] != db_rev_raw['revenue_billions'].shift()]
         else:
@@ -52,32 +48,32 @@ def process_one_ticker(
         if 'revenue_billions_x' in rev.columns:
             rev['revenue_billions_x'] = rev['revenue_billions_x'].fillna(rev.get('revenue_billions_y'))
             rev = rev.rename(columns={'revenue_billions_x':'revenue_billions'})
-        rev = SIF.clean_rev_data(rev)
+        rev = fx["clean_rev_data"](rev)
 
-        # 3) 매출 예측 (SARIMA/LSTM/Prophet/ES)
-        sarima_df, _ = SIF.sarima.run_sarima_prediction(rev, forecast_quarters=4, exog_col=None)
+        # 3) 매출 예측
+        sarima_df, _ = fx["sarima"].run_sarima_prediction(rev, forecast_quarters=4, exog_col=None)
         sarima_df = sarima_df.sort_values('date_month_end').set_index('date_month_end')
-        lstm_raw_df, _ = SIF.lstm_v2.run_lstm_revenue_prediction(rev, ticker=ticker, prediction_quarters=4)
+        lstm_raw_df, _ = fx["lstm_v2"].run_lstm_revenue_prediction(rev, ticker=ticker, prediction_quarters=4)
         lstm_df = lstm_raw_df.drop_duplicates(subset=['revenue_billions_lstm_forecast'], keep='last')
-        prophet_raw_df, _ = SIF.prophet_v3.run_prophet_revenue_only(rev, ticker=ticker, prediction_quarters=4)
-        es_raw_df, _ = SIF.esmod.run_es_revenue_quarterly(rev, ticker=ticker, prediction_quarters=4)
+        prophet_raw_df, _ = fx["prophet_v3"].run_prophet_revenue_only(rev, ticker=ticker, prediction_quarters=4)
+        es_raw_df, _ = fx["esmod"].run_es_revenue_quarterly(rev, ticker=ticker, prediction_quarters=4)
 
         # 4) 시총
-        market_data, _ = SIF.fetch_market_data_yearly(ticker, api_key, start_year=2010)
-        fmp_mcap = SIF.process_daily_to_monthly_market_data(market_data, ticker).copy()
-        fmp_mcap['date_month_end'] = SIF.to_month_end_safe(fmp_mcap['date'])
+        market_data, _ = fx["fetch_market_data_yearly"](ticker, api_key, start_year=2010)
+        fmp_mcap = fx["process_daily_to_monthly_market_data"](market_data, ticker).copy()
+        fmp_mcap['date_month_end'] = fx["to_month_end_safe"](fmp_mcap['date'])
         fmp_mcap = (fmp_mcap.drop_duplicates(subset=['date_month_end'])
                              .sort_values('date_month_end')
                              .reset_index(drop=True))
 
         # 5) DB 시총 병합
-        db_mcap = SIF._safe_get_db_market_df(ticker, db_info)
-        if (not db_mcap.empty) and ('date_month_end' not in db_mcap.columns):
+        db_mcap = fx["_safe_get_db_market_df"](ticker, db_info)
+        if (db_mcap is not None and not db_mcap.empty) and ('date_month_end' not in db_mcap.columns):
             if 'date' in db_mcap.columns:
-                db_mcap['date_month_end'] = SIF.to_month_end_safe(db_mcap['date'])
+                db_mcap['date_month_end'] = fx["to_month_end_safe"](db_mcap['date'])
             else:
                 db_mcap = pd.DataFrame()
-        if db_mcap.empty:
+        if db_mcap is None or db_mcap.empty:
             merged_mcap = fmp_mcap.copy()
             merged_mcap['market_cap_billions_from_db'] = np.nan
         else:
@@ -99,7 +95,7 @@ def process_one_ticker(
                                  .sort_values('date_month_end')
                                  .reset_index(drop=True))
 
-        # 6) PSR 계산을 위한 결합 + TTM/PSR
+        # 6) PSR 계산
         enhanced = pd.merge(
             merged_mcap[['date_month_end','market_cap_billions']],
             rev, on='date_month_end', how='outer'
@@ -112,17 +108,17 @@ def process_one_ticker(
             (enhanced_resize['date_month_end'] <= END_DATE_MONTH)
         ].dropna(axis=0)
 
-        enhanced_ttm = SIF.calculate_enhanced_ttm_and_psr(enhanced_resize)
+        enhanced_ttm = fx["calculate_enhanced_ttm_and_psr"](enhanced_resize)
 
         # 6-1) PSR 예측
-        psr_sarima_df, _  = SIF.sarima.run_sarima_psr_only(enhanced_ttm, periods=12,
+        psr_sarima_df, _  = fx["sarima"].run_sarima_psr_only(enhanced_ttm, periods=12,
                            target_col='PSR_ttm', analysis_start='2012-06-01',
                            warmup_months=6, fill_method='interpolate', ic='aic')
-        psr_lstm_df, _    = SIF.lstm_v2.run_lstm_psr_prediction(enhanced_ttm, ticker=ticker, prediction_months=12)
-        psr_prophet_df, _ = SIF.prophet_v3.run_prophet_psr_only(enhanced_ttm, ticker=ticker, prediction_months=12)
-        psr_es_df, _      = SIF.esmod.run_es_psr_only(enhanced_ttm, ticker=ticker, prediction_months=12, start_date=None)
+        psr_lstm_df, _    = fx["lstm_v2"].run_lstm_psr_prediction(enhanced_ttm, ticker=ticker, prediction_months=12)
+        psr_prophet_df, _ = fx["prophet_v3"].run_prophet_psr_only(enhanced_ttm, ticker=ticker, prediction_months=12)
+        psr_es_df, _      = fx["esmod"].run_es_psr_only(enhanced_ttm, ticker=ticker, prediction_months=12, start_date=None)
 
-        # 7) Valuation 종합 (TTM revenue + PSR 조합, 최신 15개)
+        # 7) Valuation 종합
         def _pick(df, cols):
             d = df.copy()
             if 'date_month_end' not in d.columns:
@@ -140,7 +136,7 @@ def process_one_ticker(
         if 'ticker' not in rev_wide.columns:
             rev_wide['ticker'] = ticker
 
-        rev_ttm_all = SIF.prepare_revenue_ttm(rev_wide)
+        rev_ttm_all = fx["prepare_revenue_ttm"](rev_wide)
         rev_ttm = rev_ttm_all.filter(like='_ttm').copy()
         if 'date_month_end' not in rev_ttm_all.columns:
             rev_ttm['date_month_end'] = rev_wide['date_month_end'].values
@@ -180,9 +176,7 @@ def process_one_ticker(
                      .rename(columns={'index':'date_month_end'})
         )
 
-        # enhanced_merged_df = enhanced_ttm에 가까움(PSR 계산 직전/직후 둘 다 가능)
         enhanced_merged_df = enhanced_resize.copy()
-
         return enhanced_merged_df, valuation_result, error_list
 
     except Exception as e:

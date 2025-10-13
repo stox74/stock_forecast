@@ -3,7 +3,7 @@ from typing import Optional, Dict
 import pandas as pd
 import numpy as np
 from sqlalchemy import text
-from config import get_engine, log
+from .config import get_engine, log
 
 TABLE_VAL = "us_valuation_result"
 TABLE_REV_FC = "us_revenue_forecast_result"
