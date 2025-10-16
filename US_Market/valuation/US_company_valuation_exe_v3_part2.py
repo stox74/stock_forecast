@@ -1,7 +1,34 @@
 # -*- coding: utf-8 -*-
 
+
+
+
 import sys, os
 from pathlib import Path
+
+def add_repo_path():
+    """
+    stock_forecast 프로젝트 루트를 자동 탐색하고,
+    해당 경로를 sys.path에 추가하여 import 오류를 방지합니다.
+    """
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        # DATA 폴더가 존재하는 경로를 찾으면 sys.path에 추가
+        if (parent / "DATA").exists():
+            sys.path.insert(0, str(parent))
+            print(f"[INFO] Project root added to sys.path: {parent}")
+            return str(parent)
+    # 만약 못 찾을 경우 대비 - fallback 경로 지정
+    fallback = r"C:\Users\Hoyoung_Park\PyCharmMiscProject\stock_forecast"
+    if os.path.isdir(fallback):
+        sys.path.insert(0, fallback)
+        print(f"[WARNING] Using fallback path: {fallback}")
+        return fallback
+    raise FileNotFoundError("❌ DATA 폴더를 찾을 수 없습니다.")
+
+# 경로 추가 실행
+project_root = add_repo_path()
+
 import pandas as pd
 import numpy as np
 from typing import Optional
@@ -935,8 +962,8 @@ if __name__ == "__main__":
     end_date_month = (pd.Timestamp.today().normalize() - pd.offsets.MonthEnd(1)).strftime('%Y-%m-%d')
     measurement_date = pd.Timestamp.today().strftime('%Y-%m-%d')
 
-    start_idx = 0
-    end_idx = 2
+    start_idx = 200
+    end_idx = 400
     BATCH_SIZE = 20
 
     error_ticker_list = []
