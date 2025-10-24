@@ -16,7 +16,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 # ==============================
-# 📌 DB 설정
+# DB 설정
 # ==============================
 def get_db_engine():
     db_info = {
@@ -33,7 +33,7 @@ def get_db_engine():
 
 
 # ==============================
-# 📌 시가총액 데이터 수집 함수
+# 시가총액 데이터 수집 함수
 # ==============================
 def get_cap(base_day):
     date = str(base_day.year) + str(base_day.month).zfill(2) + str(base_day.day).zfill(2)
@@ -53,13 +53,13 @@ def get_cap(base_day):
 
 
 # ==============================
-# 📌 전체 기간 시가총액 데이터프레임 생성
+# 전체 기간 시가총액 데이터프레임 생성
 # ==============================
 def collect_marketcap(start_date: str, end_date: str) -> pd.DataFrame:
     biz_days = pd.date_range(start=start_date, end=end_date, freq=BDay())
     all_data = []
     for day in biz_days:
-        print(f"📅 {day.date()} 시가총액 데이터 수집중...")
+        print(f" {day.date()} 시가총액 데이터 수집중...")
         cap_df = get_cap(day)
         cap_df['date'] = day.strftime('%Y-%m-%d')
         all_data.append(cap_df)
@@ -68,7 +68,7 @@ def collect_marketcap(start_date: str, end_date: str) -> pd.DataFrame:
 
 
 # ==============================
-# 📌 데이터 전처리 및 long format 변환
+# 데이터 전처리 및 long format 변환
 # ==============================
 def transform_to_long_format(df: pd.DataFrame) -> pd.DataFrame:
     df.rename(columns={'티커': 'ticker', 'Stocks': '유통주식수'}, inplace=True)
@@ -82,11 +82,11 @@ def transform_to_long_format(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ==============================
-# 📌 DB 업로드 함수
+# DB 업로드 함수
 # ==============================
 
 def upload_to_db(df: pd.DataFrame, table_name: str, engine):
-    # ✅ 데이터 타입 정의
+    # 데이터 타입 정의
     dtype_dict = {
         'date': Date(),
         'ticker': String(10),
@@ -94,14 +94,14 @@ def upload_to_db(df: pd.DataFrame, table_name: str, engine):
         'value': Float()
     }
 
-    # ✅ date 컬럼을 datetime.date 로 변환
+    # date 컬럼을 datetime.date 로 변환
     df['date'] = pd.to_datetime(df['date']).dt.date
 
-    # ✅ DB 커넥션 + 트랜잭션 직접 관리
+    # DB 커넥션 + 트랜잭션 직접 관리
     conn = engine.connect()
     trans = conn.begin()
     try:
-        # ✅ chunksize 로 나누어 insert (예: 5000 행씩)
+        # chunksize 로 나누어 insert (예: 5000 행씩)
         df.to_sql(
             name=table_name,
             con=conn,
@@ -111,9 +111,9 @@ def upload_to_db(df: pd.DataFrame, table_name: str, engine):
             chunksize=5000
         )
         trans.commit()
-        print(f"✅ DB 테이블 [{table_name}] 업로드 완료!")
+        print(f"DB 테이블 [{table_name}] 업로드 완료!")
     except Exception as e:
-        print(f"🚨 DB 업로드 실패: {e}")
+        print(f"DB 업로드 실패: {e}")
         trans.rollback()
     finally:
         conn.close()
