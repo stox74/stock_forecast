@@ -6,8 +6,8 @@
 
 # 전체 티커 리스트
 ALL_TICKERS = [
-    {'ticker': 'A005930', 'hs_code': '8542'},  # 삼성전자 - 반도체
-    {'ticker': 'A000660', 'hs_code': None},     # SK하이닉스
+    {'ticker': 'A005930', 'hs_code': '854232'},  # 삼성전자 - 반도체
+    {'ticker': 'A000660', 'hs_code': '854232'},     # SK하이닉스
     {'ticker': 'A051910', 'hs_code': None},     # LG화학
     {'ticker': 'A035420', 'hs_code': None},     # NAVER
     {'ticker': 'A005380', 'hs_code': None},     # 현대차
@@ -20,8 +20,8 @@ ALL_TICKERS = [
 
 # 테스트용 소수 티커 리스트
 TEST_TICKERS = [
-    {'ticker': 'A005930', 'hs_code': '8542'},  # 삼성전자
-    {'ticker': 'A000660', 'hs_code': None},     # SK하이닉스
+    {'ticker': 'A005930', 'hs_code': '854232'},  # 삼성전자
+    {'ticker': 'A000660', 'hs_code': '854232'},     # SK하이닉스
     {'ticker': 'A035420', 'hs_code': None},     # NAVER
 ]
 
