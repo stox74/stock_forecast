@@ -4,7 +4,10 @@
     <file url="file://$PROJECT_DIR$/DATA/universal_ts_forecast_function.py" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/DATA/us_lstm_forecast_v2.py" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/DATA/us_sarima_forecast.py" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Korea_Market/valuation/kse_valuation_machine/get_forecasted_revenue_df.py" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/Korea_Market/valuation/kse_valuation_machine/get_revenue_export_joined_table.py" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Korea_Market/valuation/kse_valuation_machine/get_revenue_ttm_df.py" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Korea_Market/valuation/kse_valuation_machine/psr_forecast_runner.py" charset="UTF-8" />
     <file url="PROJECT" charset="EUC-KR" />
   </component>
 </project>

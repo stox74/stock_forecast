@@ -127,7 +127,7 @@ def extract_quarterly_fs_data(
     # 7) Date 인덱스화
     result["Date"] = pd.to_datetime(result["Date"], errors="coerce")
     result = result.set_index("Date").sort_index()
-    result.index.name = "Date"
+    result.index.name = "date"
 
     return result
 

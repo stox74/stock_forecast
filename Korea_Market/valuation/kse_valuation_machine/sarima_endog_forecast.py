@@ -56,7 +56,7 @@ def forecast_endog_with_optional_exog(
 
     y = df["endog_var"].astype(float)
 
-    # ✅ 외생변수 처리
+    # 외생변수 처리
     use_exog = (hs_code is not None) and ("exog_var" in df.columns)
     X = None
     if use_exog:
@@ -154,23 +154,13 @@ def forecast_endog_fill_tail(
     horizon: Optional[int] = None,            # None이면 endog_var 꼬리쪽 NaN 갯수로 자동 추정
     hs_code: Optional[str] = None,            # None이면 exog 미사용
     seasonal_period: Optional[int] = None,    # 미지정 시 자동 추론
-    exog_strategy: str = "seasonal",          # 미래 exog 생성 전략
+    exog_strategy: Optional[str] = None,      # None일 경우 자동 결정
     sarima_grid_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     final_combined_data 같은 DF를 받아 SARIMA로 꼬리(endog_var NaN)만 예측해 채웁니다.
-
-    Returns
-    -------
-    {
-      'forecast_index': DatetimeIndex,
-      'forecast': np.ndarray,
-      'spec': {'order','seasonal_order','ic_value'},
-      'used_exog': bool,
-      'seasonal_period': int,
-      'filled': DataFrame  # endog_var NaN 채운 결과
-    }
     """
+
     df = _ensure_dt_index(combined_df)
     if "endog_var" not in df.columns:
         return {"error": "combined_df에 'endog_var'가 없습니다."}
@@ -180,15 +170,14 @@ def forecast_endog_fill_tail(
     # 1) horizon 자동 추정 (endog_var 꼬리쪽 NaN 길이)
     if horizon is None:
         mask_notna = y_all.notna()
-        # 마지막 유효값의 위치 찾기
         if mask_notna.any():
             last_obs_loc = np.where(mask_notna.values)[0][-1]
             horizon = len(y_all) - (last_obs_loc + 1)
         else:
-            horizon = 4  # 극단 상황 fallback
+            horizon = 4
     horizon = int(max(1, horizon))
 
-    # 2) 학습 구간 (마지막 관측까지)
+    # 2) 학습 구간
     y_train = y_all.dropna()
 
     # 3) 계절 주기 추론
@@ -196,24 +185,26 @@ def forecast_endog_fill_tail(
         freq_alias = infer_freq_alias(y_train.index)
         seasonal_period = seasonal_periods_from_freq(freq_alias)
 
-    # 4) exog 사용 여부/정렬
+    # 4) exog 사용 여부
     use_exog = (hs_code is not None) and ("exog_var" in df.columns)
+
+    # exog_strategy 자동 설정 로직 추가
+    if use_exog and exog_strategy is None:
+        exog_strategy = "seasonal"
+
     X_train = None
     if use_exog:
         X_full = df[["exog_var"]].astype(float)
-
-        # ✅ 앞부분 exog NaN 제거: exog 첫 유효시점 이후만 사용
         first_exog = X_full["exog_var"].first_valid_index()
         if first_exog is not None:
             X_full = X_full.loc[first_exog:]
-            y_train = y_train.loc[first_exog:]  # 인덱스 맞춤
+            y_train = y_train.loc[first_exog:]
 
-        # y_train과 교집합만 사용
         idx = y_train.index.intersection(X_full.index)
         y_train = y_train.loc[idx]
         X_train = X_full.loc[idx]
 
-    # 5) SARIMA 파라미터 탐색 & 적합
+    # 나머지 원래 코드 동일
     grid = dict(sarima_grid_kwargs or {})
     grid.setdefault("p_values", (0, 1, 2))
     grid.setdefault("d_values", (0, 1))
@@ -237,7 +228,6 @@ def forecast_endog_fill_tail(
     if res is None:
         return {"error": "SARIMA fit failed", "used_exog": use_exog, "seasonal_period": int(seasonal_period)}
 
-    # 6) 미래 인덱스 & exog_future 생성 (exog 사용 시)
     last_obs_ts = y_train.index[-1]
     fc_index = _future_q_index(last_obs_ts, horizon)
 
@@ -250,20 +240,14 @@ def forecast_endog_fill_tail(
             strategy=exog_strategy
         )
 
-    # 7) 예측
     try:
-        if use_exog:
-            fc = res.forecast(steps=horizon, exog=exog_future)
-        else:
-            fc = res.forecast(steps=horizon)
+        fc = res.forecast(steps=horizon, exog=exog_future if use_exog else None)
     except Exception as e:
         return {"error": f"forecast failed: {e}", "used_exog": use_exog, "seasonal_period": int(seasonal_period)}
 
     fc = np.asarray(fc, dtype=float)
 
-    # 8) 채워진 결과 DF
     filled = df.copy()
-    # 채울 위치(보통 꼬리쪽 NaN 구간)
     filled.loc[fc_index, "endog_var"] = fc
 
     return {
@@ -277,5 +261,6 @@ def forecast_endog_fill_tail(
         "used_exog": use_exog,
         "seasonal_period": int(seasonal_period),
         "filled": filled,
-        "exog_future": exog_future
+        "exog_future": exog_future,
+        "exog_strategy_used": exog_strategy  # 확인용 필드 추가
     }
