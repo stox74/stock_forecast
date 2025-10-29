@@ -262,7 +262,7 @@ def run_batch(
 # ────────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # 예) 테스트 3종만 돌리기, valuation 시작월은 자동(현재달+1), forecast_date는 오늘
-    run_batch(group="test", value_start_date=None, forecast_date=None)
+    run_batch(group="all", value_start_date=None, forecast_date=None)
 
     # 전체 실행 예시
     # run_batch(group="all", value_start_date=None, forecast_date=None)
