@@ -11,23 +11,25 @@ ALL_TICKERS = [
     {'ticker': 'A051910', 'hs_code': None},     # LG화학
     {'ticker': 'A035420', 'hs_code': None},     # NAVER
     {'ticker': 'A005380', 'hs_code': '8703'},     # 현대차
-    {'ticker': 'A006400', 'hs_code': None},     # 삼성SDI
+    {'ticker': 'A006400', 'hs_code': '850760'},     # 삼성SDI
     {'ticker': 'A035720', 'hs_code': None},     # 카카오
-    {'ticker': 'A000270', 'hs_code': None},     # 기아
-    {'ticker': 'A068270', 'hs_code': None},     # 셀트리온
-    {'ticker': 'A207940', 'hs_code': None},     # 삼성바이오로직스
+    {'ticker': 'A000270', 'hs_code': '8703'},     # 기아
+    {'ticker': 'A068270', 'hs_code': '300214'},     # 셀트리온
+    {'ticker': 'A207940', 'hs_code': '300214'},     # 삼성바이오로직스
     {'ticker': 'A042700', 'hs_code': '854232'}, # 한미반도체
-    {'ticker': 'A043150', 'hs_code': None},  # 바텍
-    {'ticker': 'A131290', 'hs_code': None},  # 티에스이
+    {'ticker': 'A043150', 'hs_code': '902213'},     # 바텍
+    {'ticker': 'A131290', 'hs_code': '903090'},  # 티에스이
     {'ticker': 'A006910', 'hs_code': '853720'},  # 보성파워텍
-    {'ticker': 'A140860', 'hs_code': None},  # 파크시스템
+    {'ticker': 'A140860', 'hs_code': '901210'},  # 파크시스템
+    {'ticker': 'A009150', 'hs_code': '8542'},  # 삼성전기
+    {'ticker': 'A095610', 'hs_code': '8486208410'},  # 테스
 ]
 
 # 테스트용 소수 티커 리스트
 TEST_TICKERS = [
-    {'ticker': 'A131290', 'hs_code': '903090'},  # 삼성전자
-    {'ticker': 'A043150', 'hs_code': '902213'},     # SK하이닉스
-    {'ticker': 'A140860', 'hs_code': '901210'},     # NAVER
+    {'ticker': 'A131290', 'hs_code': '903090'},  # 티에스이
+    {'ticker': 'A043150', 'hs_code': '902213'},     # 바텍
+    {'ticker': 'A140860', 'hs_code': '901210'},     # 파크시스템
 ]
 
 # 반도체 섹터
