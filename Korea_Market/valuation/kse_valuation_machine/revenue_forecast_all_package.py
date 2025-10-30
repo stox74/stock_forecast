@@ -17,6 +17,9 @@ from DATA.universal_ts_forecast_function import (
 
 # ===== 공통 유틸 =====
 
+import pandas as pd
+import numpy as np
+
 def _future_index_from_last(idx: pd.DatetimeIndex, horizon: int) -> pd.DatetimeIndex:
     """마지막 관측 이후 horizon개 인덱스(분기/월 말일) 생성"""
     if not isinstance(idx, pd.DatetimeIndex) or len(idx) == 0:

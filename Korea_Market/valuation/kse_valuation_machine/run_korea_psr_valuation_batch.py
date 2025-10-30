@@ -24,6 +24,7 @@ from DATA.stock_invest_function import *
 from get_market_cap_by_ticker import get_market_cap_by_ticker
 from get_fs_data_by_ticker import extract_quarterly_fs_data
 from get_hscode_processed_data import get_hscode_processed_data
+from get_monthly_export_data import extract_monthly_exog_var
 from get_revenue_export_joined_table import get_revenue_export_joined_table
 from sarima_endog_forecast import forecast_endog_with_optional_exog
 from sarima_endog_forecast import forecast_endog_fill_tail
@@ -133,6 +134,8 @@ def process_single_ticker(
             final_combined_data=final_combined_data,
             forecast_df=forecast_df,
         )
+
+        final_combined_data = final_combined_data.loc['2015-01-01':]
 
         # 4) Revenue forecasts
         out_noexog = forecast_endog_with_optional_exog(
@@ -262,7 +265,7 @@ def run_batch(
 # ────────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # 예) 테스트 3종만 돌리기, valuation 시작월은 자동(현재달+1), forecast_date는 오늘
-    run_batch(group="all", value_start_date=None, forecast_date=None)
+    run_batch(group="test", value_start_date=None, forecast_date=None)
 
     # 전체 실행 예시
     # run_batch(group="all", value_start_date=None, forecast_date=None)

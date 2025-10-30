@@ -25,16 +25,16 @@ ALL_TICKERS = [
 
 # 테스트용 소수 티커 리스트
 TEST_TICKERS = [
-    {'ticker': 'A005930', 'hs_code': '854232'},  # 삼성전자
-    {'ticker': 'A000660', 'hs_code': '854232'},     # SK하이닉스
-    {'ticker': 'A035420', 'hs_code': None},     # NAVER
+    {'ticker': 'A131290', 'hs_code': '903090'},  # 삼성전자
+    {'ticker': 'A043150', 'hs_code': '902213'},     # SK하이닉스
+    {'ticker': 'A140860', 'hs_code': '901210'},     # NAVER
 ]
 
 # 반도체 섹터
 SEMICONDUCTOR_TICKERS = [
-    {'ticker': 'A005930', 'hs_code': '8542'},  # 삼성전자
-    {'ticker': 'A000660', 'hs_code': None},     # SK하이닉스
-    {'ticker': 'A006400', 'hs_code': None},     # 삼성SDI
+    {'ticker': 'A131290', 'hs_code': '8542'},  # 삼성전자
+    {'ticker': 'A000660', 'hs_code': '902213'},     # SK하이닉스
+    {'ticker': 'A006400', 'hs_code': '902213'},     # 삼성SDI
 ]
 
 # IT 섹터
