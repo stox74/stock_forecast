@@ -57,7 +57,7 @@ from DATA.stock_invest_function import *
 
 import traceback
 import datetime as dt
-
+from save_excel import *
 DEBUG = True
 
 
@@ -971,7 +971,9 @@ if __name__ == "__main__":
     batch_results = []
     batch_revenue_results = []
 
-    target_tickers = ticker_list[start_idx:end_idx]
+    # target_tickers = ticker_list[start_idx:end_idx]
+
+    target_tickers = ['AAPL']
 
     miss_q, miss_m = audit_db_coverage(db_info, target_tickers)
 
@@ -1269,6 +1271,10 @@ if __name__ == "__main__":
                 'PSR_es_forecast']
 
             valuation_filled = valuation_filled.sort_index()
+
+            # valuation 산출 결과 임시 저장
+            # save_excel(valuation_filled,
+
             valuation_result = (
                 valuation_filled
                 .groupby('ticker', group_keys=False)

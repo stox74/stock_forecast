@@ -152,9 +152,9 @@ def diag_revenue_and_mcap_gaps(db_info, ticker: str):
             # 어떤 형태로 저장돼 있는지 실제 샘플
             print("\n--- sample matched tickers in US_fundq ---")
             sample = pd.read_sql(text(
-                """SELECT DISTINCT ticker
-                   FROM US_fundq
-                   WHERE (ticker=:t OR TRIM(ticker)=:t OR UPPER(TRIM(ticker))=UPPER(:t)
+                """SELECT DISTINCT ticker 
+                   FROM US_fundq 
+                   WHERE (ticker=:t OR TRIM(ticker)=:t OR UPPER(TRIM(ticker))=UPPER(:t) 
                           OR ticker LIKE :p1 OR ticker LIKE :p2 OR ticker LIKE :p3)
                    LIMIT 20;"""
             ), conn, params={"t": ticker, "p1": f"{ticker}%", "p2": f"{ticker}:%", "p3": f"{ticker}.%"})
@@ -162,9 +162,9 @@ def diag_revenue_and_mcap_gaps(db_info, ticker: str):
 
             print("\n--- latest 5 rows (by date) ---")
             latest = pd.read_sql(text(
-                """SELECT date, ticker, saleq
-                   FROM US_fundq
-                   WHERE (ticker=:t OR TRIM(ticker)=:t OR UPPER(TRIM(ticker))=UPPER(:t)
+                """SELECT date, ticker, saleq 
+                   FROM US_fundq 
+                   WHERE (ticker=:t OR TRIM(ticker)=:t OR UPPER(TRIM(ticker))=UPPER(:t) 
                           OR ticker LIKE :p1 OR ticker LIKE :p2 OR ticker LIKE :p3)
                      AND saleq IS NOT NULL
                    ORDER BY date DESC
@@ -689,121 +689,6 @@ def ensure_valuation_table(db_info: dict, table_name: str = "us_valuation_result
         # 3) COLLATE 제거 (서버 기본값 사용)
         conn.execute(text(_ddl(table_name, with_collate=False)))
 
-
-# ============================================
-# 1. 테이블 생성 함수 추가 (ensure_valuation_table 아래에 추가)
-# ============================================
-
-def _ddl_revenue_forecast(table_name: str, with_collate: bool = True, collation: str = "utf8mb4_0900_ai_ci") -> str:
-    """Revenue forecast 테이블 DDL"""
-    tail = f"ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE={collation};" if with_collate else \
-        "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
-    return f"""
-    CREATE TABLE IF NOT EXISTS `{table_name}` (
-      `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      `ticker` VARCHAR(16) NOT NULL,
-      `date_month_end` DATE NOT NULL,
-      `revenue_billions` DECIMAL(20,8) NULL,
-      `revenue_ttm` DECIMAL(20,8) NULL,
-      `revenue_ttm_billions` DECIMAL(20,8) NULL,
-      `revenue_ttm_shift` DECIMAL(20,8) NULL,
-      `PSR_ttm` DECIMAL(20,8) NULL,
-      `market_cap_billions` DECIMAL(20,8) NULL,
-      `created_at` DATETIME NOT NULL,
-      `created_ts` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      `updated_ts` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (`id`),
-      KEY `idx_ticker_date` (`ticker`, `date_month_end`),
-      KEY `idx_created_at` (`created_at`),
-      UNIQUE KEY `uq_ticker_date_created` (`ticker`, `date_month_end`, `created_at`)
-    ) {tail}
-    """
-
-
-def ensure_revenue_forecast_table(db_info: dict, table_name: str = "us_revenue_forecast_result"):
-    """Revenue forecast 테이블 생성 보장"""
-    engine = create_engine(
-        f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
-        f"{db_info['host']}:{db_info['port']}/{db_info['database']}?charset=utf8mb4"
-    )
-    with engine.begin() as conn:
-        # 1) MySQL8 전용 콜레이션 시도
-        try:
-            conn.execute(text(_ddl_revenue_forecast(table_name, with_collate=True, collation="utf8mb4_0900_ai_ci")))
-            return
-        except Exception as e:
-            if not _is_unknown_collation(e):
-                raise
-        # 2) 광범위 호환 콜레이션 시도
-        try:
-            conn.execute(text(_ddl_revenue_forecast(table_name, with_collate=True, collation="utf8mb4_unicode_ci")))
-            return
-        except Exception as e2:
-            if not _is_unknown_collation(e2):
-                raise
-        # 3) COLLATE 제거 (서버 기본값 사용)
-        conn.execute(text(_ddl_revenue_forecast(table_name, with_collate=False)))
-
-
-def upsert_revenue_forecast_to_db(df: pd.DataFrame,
-                                  db_info: dict,
-                                  table_name: str = "us_revenue_forecast_result") -> int:
-    """
-    Revenue forecast 데이터를 DB에 업서트
-    - (ticker, date_month_end, created_at) 기준으로 중복 제거
-    - 기존 데이터는 삭제 후 insert
-    """
-    if df is None or df.empty:
-        return 0
-
-    engine = create_engine(
-        f"mysql+pymysql://{db_info['user']}:{db_info['password']}@"
-        f"{db_info['host']}:{db_info['port']}/{db_info['database']}?charset=utf8mb4"
-    )
-
-    # 필요한 컬럼만 선택
-    base_cols = ['ticker', 'date_month_end', 'revenue_billions', 'revenue_ttm',
-                 'revenue_ttm_billions', 'revenue_ttm_shift', 'PSR_ttm', 'market_cap_billions']
-
-    use_df = df.copy()
-
-    # 컬럼 존재 확인 및 추가
-    for col in base_cols:
-        if col not in use_df.columns:
-            use_df[col] = np.nan
-
-    # created_at 추가
-    use_df['created_at'] = pd.Timestamp.utcnow()
-
-    # date_month_end를 datetime으로 변환
-    use_df['date_month_end'] = pd.to_datetime(use_df['date_month_end'], errors='coerce')
-
-    # NaN 제거
-    use_df = use_df.dropna(subset=['ticker', 'date_month_end'])
-
-    if use_df.empty:
-        return 0
-
-    final_cols = base_cols + ['created_at']
-    use_df = use_df[final_cols]
-
-    affected = 0
-    with engine.begin() as conn:
-        # ticker와 created_at 조합별로 삭제 후 insert
-        for (tk, ca), g in use_df.groupby(['ticker', 'created_at']):
-            # 1) 기존 데이터 삭제
-            del_sql = f"""
-                DELETE FROM {table_name}
-                WHERE ticker = :ticker AND created_at = :created_at
-            """
-            conn.execute(text(del_sql), {'ticker': str(tk), 'created_at': pd.to_datetime(ca)})
-
-            # 2) 새 데이터 insert
-            g.to_sql(table_name, conn, if_exists='append', index=False)
-            affected += len(g)
-
-    return affected
-
 def upsert_long_to_db_on_ticker_created_at(long_df: pd.DataFrame,
                                            db_info: dict,
                                            table_name: str = "us_valuation_result") -> int:
@@ -850,14 +735,98 @@ def upsert_long_to_db_on_ticker_created_at(long_df: pd.DataFrame,
 # ==========================
 # 복수 ticker 처리 입력값/리스트
 # ==========================
+ticker_list = ['AAPL', 'MSFT', 'AMZN', 'NVDA', 'GOOGL', 'GOOG', 'META', 'TSLA', 'UNH', 'LLY',
+    'JNJ', 'PG', 'AVGO', 'HD', 'MRK', 'ABBV', 'PEP', 'COST', 'ADBE', 'KO',
+    'CSCO', 'WMT', 'TMO', 'MCD', 'PFE', 'CRM', 'ACN', 'CMCSA', 'LIN', 'NFLX',
+    'ABT', 'ORCL', 'DHR', 'AMD', 'DIS', 'TXN', 'PM', 'VZ', 'INTU', 'CAT',
+    'AMGN', 'INTC', 'UNP', 'LOW', 'IBM', 'BMY', 'RTX', 'HON', 'BA', 'UPS',
+    'GE', 'QCOM', 'AMAT', 'NKE', 'NOW', 'BKNG', 'SBUX', 'ELV', 'MDT', 'DE',
+    'ADP', 'LMT', 'TJX', 'T', 'ISRG', 'MDLZ', 'GILD', 'SYK', 'REGN', 'VRTX',
+    'ETN', 'LRCX', 'ADI', 'CVS', 'ZTS', 'CI', 'BDX', 'MO', 'TMUS', 'FI',
+    'BSX', 'MU', 'PANW', 'PYPL', 'SNPS', 'ITW', 'KLAC', 'LULU', 'APD', 'SHW',
+    'CDNS', 'CSX', 'NOC', 'CL', 'HUM', 'FDX', 'WM', 'MCK', 'TGT', 'ORLY',
+    'HCA', 'FCX', 'EMR', 'MMM', 'ROP', 'CMG', 'MAR', 'PH', 'APH', 'GD',
+    'NXPI', 'NSC', 'F', 'MSI', 'GM', 'TT', 'EW', 'CARR', 'AZO', 'ADSK',
+    'TDG', 'ANET', 'ECL', 'PCAR', 'ADM', 'MNST', 'KMB', 'CHTR', 'MCHP', 'MSCI',
+    'CTAS', 'STZ', 'XYZ', 'NUE', 'ROST', 'KVUE', 'IDXX', 'TEL', 'JCI', 'GIS',
+    'IQV', 'DXCM', 'HLT', 'ON', 'PAYX', 'BIIB', 'FTNT', 'DOW', 'MRNA', 'CPRT',
+    'ODFL', 'DHI', 'YUM', 'CTSH', 'AME', 'SYY', 'A', 'CTVA', 'CNC', 'EL',
+    'OTIS', 'ROK', 'DD', 'VRSK', 'LHX', 'DG', 'CMI', 'CSGP', 'FAST', 'PPG',
+    'GWW', 'HSY', 'EA', 'NEM', 'ED', 'URI', 'KR', 'RSG', 'LEN', 'PWR',
+    'WST', 'COR', 'VMC', 'KDP', 'WBD', 'IR', 'CDW', 'MLM', 'DAL', 'FTV',
+    'IT', 'KHC', 'GEHC', 'HPQ', 'CBRE', 'APTV', 'TTD', 'MTD', 'DLTR', 'GDDY',
+    'ALGN', 'LYB', 'TROW', 'GLW', 'EFX', 'WY', 'ZBH', 'XYL', 'RMD', 'TSCO',
+    'EBAY', 'KEYS', 'CHD', 'COIN', 'ALB', 'STE', 'TTWO', 'MPWR', 'CAH', 'RCL',
+    'HPE', 'GPC', 'BR', 'ULTA', 'FICO', 'BAX', 'MKC', 'WAB', 'DOV', 'FLT',
+    'CLX', 'TDY', 'DRI', 'LH', 'HOLX', 'VRSN', 'MOH', 'LUV', 'NVR', 'COO',
+    'WBA', 'PHM', 'NDAQ', 'HWM', 'RF', 'LVS', 'EXPD', 'FSLR', 'WDAY', 'IEX',
+    'BG', 'FDS', 'ENPH', 'IFF', 'BALL', 'SWKS', 'NTAP', 'STLD', 'UAL', 'WAT',
+    'OMC', 'TER', 'CCL', 'JBHT', 'TPL', 'TYL', 'K', 'GRMN', 'CBOE', 'TSN',
+    'AKAM', 'EG', 'TXT', 'EXPE', 'SJM', 'PTC', 'DGX', 'AVY', 'RVTY', 'BBY',
+    'CF', 'CAG', 'EPAM', 'AMCR', 'LW', 'PAYC', 'SNA', 'AXON', 'POOL', 'SYF',
+    'SWK', 'ZBRA', 'DPZ', 'PKG', 'LDOS', 'VTRS', 'PODD', 'LKQ', 'MOS', 'TRMB',
+    'MGM', 'NDSN', 'WDC', 'MAS', 'IPG', 'MTCH', 'STX', 'KMX', 'TECH', 'WRB',
+    'BF.B', 'LYV', 'IP', 'WSM', 'INCY', 'L', 'TAP', 'GEN', 'JKHY', 'HRL',
+    'CZR', 'PEAK', 'CDAY', 'PNR', 'CHRW', 'HSIC', 'CRL', 'TKO', 'GL', 'EMN',
+    'WYNN', 'ALLE', 'PLTR', 'FFIV', 'DASH', 'MKTX', 'ROL', 'DDOG', 'DELL', 'BLDR',
+    'FOXA', 'AOS', 'HAS', 'HII', 'CPB', 'UHS', 'WRK', 'LII', 'GEV', 'BBWI',
+    'NWSA', 'TPR', 'PARA', 'SMCI', 'NCLH', 'GNRC', 'SOLV', 'CRWD', 'DVA', 'JBL',
+    'HUBB', 'DECK', 'UBER', 'MHK', 'RL', 'VLTO', 'FOX', 'ABNB', 'NWS', 'AAP', 'ABG',
+    'ABM', 'ACA', 'ACAD', 'ACHC', 'ACIW', 'ACLS', 'ACMR', 'ACT',
+    'ADEA', 'ADMA', 'ADNT', 'ADUS', 'AEO', 'AGO', 'AGYS', 'AHCO', 'AIN', 'AIR',
+    'AL', 'ALEX', 'ALG', 'ALGT', 'ALKS', 'ALRM', 'AMN', 'AMPH', 'AMR', 'AMSF',
+    'AMTM', 'AMWD', 'ANDE', 'ANGI', 'ANIP', 'AORT', 'AOSL', 'APAM', 'APOG', 'ARCB',
+    'ARLO', 'AROC', 'ARR', 'ARWR', 'ASIX', 'ASO', 'ASTE', 'ASTH', 'ATEN', 'ATGE',
+    'AUB', 'AVA', 'AVNS', 'AWI', 'AXL', 'AZTA', 'AZZ', 'BANF', 'BANR', 'BCC',
+    'BCPC', 'BFS', 'BGC', 'BHE', 'BJRI', 'BKE', 'BL', 'BLFS', 'BLMN', 'BMI',
+    'BOOT', 'BOX', 'BRC', 'BWA', 'CABO', 'CAKE', 'CAL', 'CALM', 'CALX', 'CARG',
+    'CARS', 'CATY', 'CBRL', 'CC', 'CCOI', 'CCS', 'CE', 'CENT', 'CENTA', 'CENX',
+    'CERT', 'CEVA', 'CFFN', 'CHCO', 'CHEF', 'CLB', 'CLSK', 'CNK', 'CNMD', 'CNR',
+    'CNS', 'CNXN', 'COHU', 'COLL', 'CON', 'CORT', 'CPRX', 'CRC', 'CRI', 'CRK',
+    'CRSR', 'CRVL', 'CSGS', 'CSR', 'CSW', 'CTKB', 'CTS', 'CVCO', 'CWK', 'CXM',
+    'CXW', 'CZR', 'DAN', 'DCOM', 'DEI', 'DFH', 'DGII', 'DIOD', 'DLX', 'DNOW',
+    'DOCN', 'DORM', 'DRH', 'DV', 'DVAX', 'DXC', 'DXPE', 'DY', 'EAT', 'ECG',
+    'EIG', 'ELME', 'EMBC', 'ENOV', 'ENR', 'ENVA', 'EPAC', 'EPC', 'ESE', 'ESI',
+    'ETD', 'ETSY', 'EVTC', 'EXPI', 'EXTR', 'EYE', 'EZPW', 'FDP', 'FFBC', 'FHB',
+    'FIZZ', 'FMC', 'FORM', 'FOXF', 'FRPT', 'FSS', 'FTDR', 'FTRE', 'FUL', 'FUN',
+    'FWRD', 'GBX', 'GDEN', 'GDYN', 'GEO', 'GES', 'GFF', 'GIII', 'GKOS', 'GNL',
+    'GO', 'GOGO', 'GOLF', 'GPI', 'GRBK', 'GTES', 'GVA', 'HAYW', 'HBI', 'HCC',
+    'HCI', 'HCSG', 'HELE', 'HI', 'HL', 'HLIT', 'HMN', 'HNI', 'HP', 'HRMY',
+    'HSII', 'HSTM', 'HTH', 'HTLD', 'HTO', 'HTZ', 'HUBG', 'HWKN', 'HZO', 'IAC',
+    'IART', 'IBP', 'ICHR', 'ICUI', 'IDCC', 'IIIN', 'INDB', 'INSP', 'INSW', 'INVA',
+    'INVX', 'IOSP', 'IPAR', 'ITGR', 'ITRI', 'JBLU', 'JBSS', 'JBTM', 'JJSF', 'JOE',
+    'KAI', 'KALU', 'KAR', 'KFY', 'KLIC', 'KMT', 'KN', 'KNTK', 'KOP', 'KRYS',
+    'KSS', 'KTB', 'KW', 'KWR', 'LCII', 'LEG', 'LGIH', 'LGND', 'LKFN', 'LMAT',
+    'LNC', 'LNN', 'LPG', 'LQDT', 'LRN', 'LUMN', 'LZB', 'MAC', 'MARA', 'MATW',
+    'MATX', 'MBC', 'MC', 'MCRI', 'MCW', 'MCY', 'MD', 'MDU', 'MGPI', 'MHO',
+    'MIR', 'MKTX', 'MLKN', 'MMI', 'MMSI', 'MNRO', 'MODG', 'MOG.A', 'MRCY', 'MRTN',
+    'MSGS', 'MTH', 'MTRN', 'MTUS', 'MTX', 'MXL', 'MYGN', 'MYRG', 'NABL', 'NATL',
+    'NAVI', 'NE', 'NEO', 'NEOG', 'NGVT', 'NHC', 'NMIH', 'NPK', 'NPO', 'NSIT',
+    'NTCT', 'NVRI', 'NWBI', 'NWL', 'NX', 'OGN', 'OI', 'OII', 'OMCL', 'OSIS',
+    'OTTR', 'OUT', 'OXM', 'PAHC', 'PARR', 'PATK', 'PAYO', 'PBH', 'PBI', 'PCRX',
+    'PDFS', 'PECO', 'PENG', 'PENN', 'PGNY', 'PHIN', 'PI', 'PINC', 'PIPR', 'PJT',
+    'PLAB', 'PLAY', 'PLMR', 'PLUS', 'PLXS', 'POWL', 'PRA', 'PRAA', 'PRDO', 'PRG',
+    'PRGS', 'PRK', 'PRKS', 'PRLB', 'PRSU', 'PRVA', 'PSMT', 'PTGX', 'PZZA', 'QDEL',
+    'QNST', 'QRVO', 'QTWO', 'RAL', 'RAMP', 'RCUS', 'RDN', 'RDNT', 'RES', 'REX',
+    'REYN', 'REZI', 'RGR', 'RHI', 'RNST', 'ROCK', 'ROG', 'RUN', 'RUSHA', 'RXO',
+    'SABR', 'SAFE', 'SAFT', 'SAH', 'SANM', 'SBH', 'SBSI', 'SCHL', 'SCL', 'SCSC',
+    'SCVL', 'SDGR', 'SEDG', 'SEE', 'SEM', 'SFBS', 'SFNC', 'SHAK', 'SHEN', 'SHO',
+    'SHOO', 'SIG', 'SITC', 'SITM', 'SKT', 'SKY', 'SKYW', 'SLVM', 'SMP', 'SMPL',
+    'SMTC', 'SNCY', 'SNDK', 'SNDR', 'SNEX', 'SONO', 'SPNT', 'SPSC', 'SPXC', 'SRPT',
+    'SSTK', 'STAA', 'STC', 'STEP', 'STRA', 'STRL', 'SUPN', 'SXI', 'SXT', 'TDC',
+    'TDS', 'TFX', 'TGNA', 'TGTX', 'THRM', 'THRY', 'THS', 'TILE', 'TMDX', 'TNC',
+    'TNDM', 'TPH', 'TR', 'TRIP', 'TRN', 'TRUP', 'TTMI', 'TWI', 'TWO', 'UCTT',
+    'UFCS', 'UFPT', 'UNF', 'UNFI', 'UNIT', 'UPBD', 'URBN', 'USNA', 'USPH', 'UTL',
+    'UVV', 'VBTX', 'VCEL', 'VCYT', 'VECO', 'VIAV', 'VICR', 'VIR', 'VRE', 'VRRM',
+    'VSAT', 'VSCO', 'VSH', 'VSTS', 'VTOL', 'VYX', 'WAFD', 'WAY', 'WD', 'WDFC',
+    'WEN', 'WERN', 'WGO', 'WHD', 'WKC', 'WLY', 'WOR', 'WRLD', 'WS', 'WSC',
+    'WT', 'WWW', 'XHR', 'XNCR', 'XPEL', 'YELP', 'YOU', 'ZD' ]
+
 
 # ===== 메인 실행 코드 =====
 if __name__ == "__main__":
     import argparse
     import gc
-
-    # 파일 상단에 import 추가
-    from DATA.us_target_ticker_list import ticker_list
 
     parser = argparse.ArgumentParser(description="Run valuation pipeline in batches")
     parser.add_argument("--start", type=int, default=0, help="시작 인덱스(포함)")
@@ -883,8 +852,8 @@ if __name__ == "__main__":
     measurement_date = pd.Timestamp.today().strftime('%Y-%m-%d')
 
 
-    start_idx = 0
-    end_idx = 2
+    start_idx = 600
+    end_idx = 850
     BATCH_SIZE = 20
 
     # 결과/상태 누적
@@ -892,17 +861,11 @@ if __name__ == "__main__":
     total_success_tickers = 0
     total_upsert_rows = 0
 
-    total_revenue_rows = 0
-    batch_revenue_results = []  # Revenue forecast 배치 컨테이너 추가
-
     # 배치 컨테이너
     batch_results = []
 
     # 대상 티커 슬라이싱
-    # for ticker in us_tickers[:5]:
-    target_tickers = us_tickers[start_idx:end_idx]
-
-
+    target_tickers = ticker_list[start_idx:end_idx]
     # 메인 시작 시 1회:
     # 메인 시작 시 1회: 커버리지 점검 + US_fundm 미존재 티커 CSV 저장
     miss_q, miss_m = audit_db_coverage(db_info, target_tickers)
@@ -915,59 +878,48 @@ if __name__ == "__main__":
         log("AUDIT-SAVE", "US_fundm missing tickers: 0 (no file saved)")
 
 
-    def _flush_batch_and_upload(batch_results, batch_revenue_results, db_info):
+    def _flush_batch_and_upload(batch_results, db_info):
         """
-        배치 → 성장요약 → long 두 종류(valuation, revenues) → DB 업서트
-        + Revenue forecast 데이터도 함께 저장
+        배치 → 성장요약 → long 두 종류(valuation, str=revenues) → DB 업서트
         """
-        global total_upsert_rows, total_revenue_rows
+        global total_upsert_rows
+        if not batch_results:
+            return
 
-        # Valuation 결과 처리
-        if batch_results:
-            ensure_valuation_table(db_info, table_name="us_valuation_result")
+        ensure_valuation_table(db_info, table_name="us_valuation_result")
 
-            try:
-                final_df = pd.concat(batch_results, axis=0, ignore_index=True)
-                rev_summary_batch, val_summary_batch = make_growth_summaries(final_df)
+        try:
+            final_df = pd.concat(batch_results, axis=0, ignore_index=True)
 
-                # valuation long
-                long_val = _to_long(val_summary_batch, category='valuation')
+            # make_growth_summaries가 (rev_summary, val_summary) 형태를 반환한다고 가정
+            rev_summary_batch, val_summary_batch = make_growth_summaries(final_df)
 
-                # revenue long
-                long_rev = _to_long(rev_summary_batch, category='revenue')
-                model_map = {
-                    'revenue_billions_sarima_noexog_ttm': 'revenue_sarima',
-                    'revenue_billions_lstm_forecast_ttm': 'revenue_lstm',
-                    'revenue_billions_prophet_forecast_ttm': 'revenue_prophet',
-                    'revenue_billions_esq_forecast_ttm': 'revenue_es',
-                    'revenue_billions_avg_of_4_ttm': 'revenue_avg_of_4'
-                }
-                if 'model' in long_rev.columns:
-                    long_rev['model'] = long_rev['model'].replace(model_map)
+            # --- valuation long ---
+            long_val = _to_long(val_summary_batch, category='valuation')
 
-                # 두 long 합치기
-                final_long = pd.concat([long_val, long_rev], axis=0, ignore_index=True)
+            # --- revenue long (카테고리=str, 모델명 통일) ---
+            long_rev = _to_long(rev_summary_batch, category='revenue')
+            # 모델명 표준화
+            model_map = {
+                'revenue_billions_sarima_noexog_ttm': 'revenue_sarima',
+                'revenue_billions_lstm_forecast_ttm': 'revenue_lstm',
+                'revenue_billions_prophet_forecast_ttm': 'revenue_prophet',
+                'revenue_billions_esq_forecast_ttm': 'revenue_es',
+                'revenue_billions_avg_of_4_ttm': 'revenue_avg_of_4'
+            }
+            if 'model' in long_rev.columns:
+                long_rev['model'] = long_rev['model'].replace(model_map)
 
-                # 업서트
-                affected = upsert_long_to_db_on_ticker_created_at(final_long, db_info, table_name="us_valuation_result")
-                total_upsert_rows += int(affected or 0)
-                log("BATCH-UPLOADED", f"valuation rows={affected}, total={total_upsert_rows}")
-            finally:
-                del batch_results[:]
-                gc.collect()
+            # --- 두 long 합치기 ---
+            final_long = pd.concat([long_val, long_rev], axis=0, ignore_index=True)
 
-        # Revenue forecast 결과 처리
-        if batch_revenue_results:
-            ensure_revenue_forecast_table(db_info, table_name="us_revenue_forecast_result")
-
-            try:
-                revenue_df = pd.concat(batch_revenue_results, axis=0, ignore_index=True)
-                affected = upsert_revenue_forecast_to_db(revenue_df, db_info, table_name="us_revenue_forecast_result")
-                total_revenue_rows += int(affected or 0)
-                log("BATCH-UPLOADED", f"revenue forecast rows={affected}, total={total_revenue_rows}")
-            finally:
-                del batch_revenue_results[:]
-                gc.collect()
+            # --- 업서트 (요구사항 #3 반영: ticker+created_at 기준 갱신, 아니면 누적) ---
+            affected = upsert_long_to_db_on_ticker_created_at(final_long, db_info, table_name="us_valuation_result")
+            total_upsert_rows += int(affected or 0)
+            log("BATCH-UPLOADED", f"rows={affected}, total_upsert_rows={total_upsert_rows}")
+        finally:
+            del batch_results[:]
+            gc.collect()
 
     # ===== 메인 루프 (강화된 디버그 로그) =====
     for idx, ticker in enumerate(target_tickers, 1):
@@ -1285,11 +1237,9 @@ if __name__ == "__main__":
     print(f"[DONE] 성공 ticker: {total_success_tickers}, 업서트 rows: {total_upsert_rows}")
     if error_ticker_list:
         try:
-            pd.DataFrame(error_ticker_list).to_csv("valuation_error_list.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(error_ticker_list).to_csv("../valuation_error_list.csv", index=False, encoding="utf-8-sig")
             print(f"[INFO] 오류 리스트 저장: valuation_error_list.csv (총 {len(error_ticker_list)}개)")
         except Exception:
             print(f"[WARN] 오류 리스트 저장 실패 (총 {len(error_ticker_list)}개)")
     else:
         print("[INFO] 오류 없이 완료")
-
-
