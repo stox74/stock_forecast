@@ -7,7 +7,7 @@ import traceback
 def run_revenue_forecasts(rev_data, ticker, sarima, lstm_v2, prophet_v3, esmod):
     """4개 모델로 매출 예측 실행"""
     try:
-        periods = 4
+        periods = 6
         sarima_df, _ = sarima.run_sarima_prediction(rev_data, forecast_quarters=periods, exog_col=None)
         sarima_df = sarima_df.sort_values("date_month_end").set_index("date_month_end")
         lstm_raw_df, _ = lstm_v2.run_lstm_revenue_prediction(rev_data, ticker=ticker, prediction_quarters=4)
@@ -26,7 +26,7 @@ def run_psr_forecasts(enhanced_merged_df_with_ttm, ticker, sarima, lstm_v2, prop
     try:
         psr_sarima_df, _ = sarima.run_sarima_psr_only(
             df=enhanced_merged_df_with_ttm,
-            periods=12,
+            periods=18,
             target_col="PSR_ttm",
             analysis_start="2012-06-01",
             warmup_months=6,
@@ -34,10 +34,10 @@ def run_psr_forecasts(enhanced_merged_df_with_ttm, ticker, sarima, lstm_v2, prop
             ic="aic"
         )
         psr_lstm_df, _ = lstm_v2.run_lstm_psr_prediction(enhanced_merged_df_with_ttm, ticker=ticker,
-                                                         prediction_months=12)
+                                                         prediction_months=18)
         psr_prophet_df, _ = prophet_v3.run_prophet_psr_only(enhanced_merged_df_with_ttm, ticker=ticker,
-                                                            prediction_months=12)
-        psr_es_df, _ = esmod.run_es_psr_only(df=enhanced_merged_df_with_ttm, ticker=ticker, prediction_months=12,
+                                                            prediction_months=18)
+        psr_es_df, _ = esmod.run_es_psr_only(df=enhanced_merged_df_with_ttm, ticker=ticker, prediction_months=18,
                                              start_date=None)
         log("OK-PSR-FORECAST",
             f"{ticker} sarima={psr_sarima_df.shape} lstm={psr_lstm_df.shape} prophet={psr_prophet_df.shape} es={psr_es_df.shape}")

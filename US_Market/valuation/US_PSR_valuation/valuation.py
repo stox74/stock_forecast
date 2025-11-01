@@ -9,7 +9,7 @@ from db_operations import (ensure_valuation_table, ensure_revenue_forecast_table
 
 def calculate_valuation(revenue_forecast_ttm, psr_forecast_df, ticker):
     """밸류에이션 계산"""
-    valuation_df = revenue_forecast_ttm.join(psr_forecast_df, how='inner')
+    valuation_df = revenue_forecast_ttm.join(psr_forecast_df, how='outer', rsuffix='_ttm').copy()
     valuation_df['ticker'] = ticker
 
     valuation_filled = valuation_df.copy()
@@ -30,7 +30,7 @@ def calculate_valuation(revenue_forecast_ttm, psr_forecast_df, ticker):
     valuation_result = (
         valuation_filled
         .groupby('ticker', group_keys=False)
-        .apply(lambda d: d.tail(15))
+        .apply(lambda d: d.tail(24))
         .reset_index()
         .rename(columns={'index': 'date_month_end'})
     )
