@@ -1,5 +1,35 @@
 # -*- coding: utf-8 -*-
 
+import sys
+import os
+
+
+# ==========================================
+# 경로 설정: investment_strategy를 루트로 추가
+# ==========================================
+def setup_project_path():
+    """프로젝트 루트 경로를 Python path에 추가"""
+    current_file = os.path.abspath(__file__)
+    # run_trade_data_adv_forecast.py 위치에서 investment_strategy까지 올라가기
+    # Korea_trade_data_forecast -> analysis -> Korea_Market -> investment_strategy
+    project_root = os.path.dirname(  # investment_strategy
+        os.path.dirname(  # Korea_Market
+            os.path.dirname(  # analysis
+                os.path.dirname(current_file)  # Korea_trade_data_forecast
+            )
+        )
+    )
+
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+        print(f"[경로 추가] {project_root}")
+
+    return project_root
+
+
+# 경로 설정 실행
+PROJECT_ROOT = setup_project_path()
+
 from trade_data_import import get_trade_data_by_hscode, get_unique_hscode_list
 from DATA.stock_invest_function import *
 from sarima_forecast_trade import sarima_forecast_trade_value
@@ -10,7 +40,6 @@ from save_long_forecast_to_db import save_long_forecast_to_db
 from memory_manager import MemoryManager, memory_context
 import pandas as pd
 import gc
-import sys
 import argparse
 from datetime import datetime
 
