@@ -1,2 +1,10 @@
 ﻿ticker,stage,error
-AAPL,valuation_pack,save_excel() missing 1 required positional argument: 'ticker'
+MU,batch_flush,"(pymysql.err.IntegrityError) (1062, ""Duplicate entry 'INVX-2025-11-04-sarima_valuation' for key 'uq_tk_fc_ind'"")
+[SQL: 
+                                INSERT INTO us_valuation_forecast_result
+                                    (`date`, `ticker`, `indicator`, `value`, `forecate_date`)
+                                VALUES
+                                    (%(date)s, %(ticker)s, %(indicator)s, %(value)s, %(forecate_date)s)
+                            ]
+[parameters: [{'date': datetime.date(2024, 9, 30), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 0.8075000000000001, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2024, 12, 31), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 1.6099999999999999, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2025, 3, 31), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 2.1888, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2025, 6, 30), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 3.977500000000001, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2025, 9, 30), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 5.613636363636363, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2025, 10, 31), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 6.0245454545454535, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2025, 11, 30), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 4.783810000684871, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2025, 12, 31), 'ticker': 'INVX', 'indicator': 'sarima_valuation', 'value': 5.02251844456184, 'forecate_date': datetime.date(2025, 11, 4)}  ... displaying 10 of 332 total bound parameter sets ...  {'date': datetime.date(2027, 1, 31), 'ticker': 'MU', 'indicator': 'es_valuation', 'value': 1102.2885978454683, 'forecate_date': datetime.date(2025, 11, 4)}, {'date': datetime.date(2027, 2, 28), 'ticker': 'MU', 'indicator': 'es_valuation', 'value': 1149.2452421492608, 'forecate_date': datetime.date(2025, 11, 4)}]]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)"
