@@ -383,9 +383,17 @@ def main():
 
         if args.ticker_range:
             try:
-                start_idx, end_idx = map(int, args.ticker_range.split(':'))
-                target_tickers = ticker_list[start_idx:end_idx]
-                log("TICKER-RANGE", f"Using ticker range {start_idx}:{end_idx}, count={len(target_tickers)}")
+                parts = args.ticker_range.split(':')
+                start_idx = int(parts[0])
+
+                # 끝 인덱스가 없거나 빈 문자열이면 끝까지
+                if len(parts) == 1 or (len(parts) == 2 and parts[1].strip() == ''):
+                    target_tickers = ticker_list[start_idx:]
+                    log("TICKER-RANGE", f"Using ticker range {start_idx}:end, count={len(target_tickers)}")
+                else:
+                    end_idx = int(parts[1])
+                    target_tickers = ticker_list[start_idx:end_idx]
+                    log("TICKER-RANGE", f"Using ticker range {start_idx}:{end_idx}, count={len(target_tickers)}")
             except Exception as e:
                 log("ERR-TICKER-RANGE", f"Invalid ticker range: {e}")
                 return
