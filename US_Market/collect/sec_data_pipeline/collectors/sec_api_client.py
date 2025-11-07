@@ -2,331 +2,638 @@
 # -*- coding: utf-8 -*-
 
 """
-SEC EDGAR API 클라이언트
-Company Facts API와 Submissions API를 사용하여 재무데이터 수집
+Company Facts JSON Parser + Financial Normalizer (Robust)
+- SEC Company Facts API 응답 파싱 및 정규화
+- 분기(YTD 포함) 정규화, Q4 복원, 연간/분기 엄격 분리
+- Revenue 태그 자동 탐색
+- FinancialNormalizer에서 robust 분기/strict 연간 사용
 """
 
-import requests
-import json
-import time
-from typing import Dict, Optional, List
-from datetime import datetime
+from __future__ import annotations
+import re
+from typing import Dict, List, Optional, Tuple, Any
+
+import pandas as pd
 
 
-class SECAPIClient:
-    """SEC EDGAR API 클라이언트"""
+# =========================
+# CompanyFactsParser
+# =========================
+class CompanyFactsParser:
+    """SEC Company Facts JSON 데이터 파서 (보강판)"""
 
-    BASE_URL = "https://data.sec.gov"
-
-    def main():
-        """테스트 실행"""
-        print("\n" + "=" * 60)
-        print("SEC EDGAR API Client Test")
-        print("=" * 60)
-
-        # User-Agent 설정 - 이름/회사명 + 이메일 형식으로!
-        user_agent = 'PersonalResearch stox1224@email.com'  # 이렇게 변경!
-
-        print(f"\n⚠️  Important: Update user_agent with your email!")
-        print(f"Current: {user_agent}\n")
-
-        client = SECAPIClient(user_agent)
-        # ... 나머지 코드
-
-    def __init__(self, user_agent: str, rate_limiter=None):
-        if not user_agent or '@' not in user_agent:
-            raise ValueError("User-Agent must include your email address")
-
-        self.user_agent = user_agent
-        self.headers = {
-            'User-Agent': user_agent,
-            'Accept-Encoding': 'gzip, deflate'
-        }
-        self.rate_limiter = rate_limiter
-        self.session = requests.Session()
-        self.session.headers.update(self.headers)
-        self._tickers_cache = None
-
-    def _make_request(self, url: str, max_retries: int = 3) -> Optional[Dict]:
+    def __init__(self, company_facts_data: Dict[str, Any]):
         """
-        API 요청 실행
-
         Args:
-            url: 요청 URL
-            max_retries: 최대 재시도 횟수
+            company_facts_data: SEC Company Facts API 응답(JSON)
+        """
+        self.data = company_facts_data or {}
+        self.entity_name = self.data.get('entityName', '')
+        self.cik = self.data.get('cik', '')
+        self.facts = self.data.get('facts', {}) or {}
+
+    # ---------------------------------------------------------------------
+    # 기본 유틸
+    # ---------------------------------------------------------------------
+    def get_available_taxonomies(self) -> List[str]:
+        """사용 가능한 taxonomy 리스트 반환"""
+        return list(self.facts.keys())
+
+    def get_available_tags(self, taxonomy: str = 'us-gaap') -> List[str]:
+        """특정 taxonomy의 사용 가능한 태그 리스트 반환"""
+        if taxonomy not in self.facts:
+            return []
+        return list(self.facts[taxonomy].keys())
+
+    def extract_tag_data(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[pd.DataFrame]:
+        """
+        특정 XBRL 태그의 데이터를 DataFrame으로 추출
 
         Returns:
-            JSON 응답 딕셔너리 또는 None
+            DataFrame(columns: [end, val, accn, fy, fp, form, filed, frame]) or None
         """
-        for attempt in range(max_retries):
-            try:
-                # Rate limiter 적용
-                if self.rate_limiter:
-                    self.rate_limiter.wait_if_needed()
+        if not tag or taxonomy not in self.facts:
+            return None
+        tax = self.facts.get(taxonomy, {})
+        if tag not in tax:
+            return None
 
-                response = self.session.get(url, timeout=30)
+        tag_data = tax[tag]
+        if 'units' not in tag_data:
+            return None
+        units = tag_data['units']
+        if unit not in units:
+            return None
 
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 404:
-                    print(f"✗ URL not found (404): {url}")
-                    return None
-                elif response.status_code == 429:  # Too Many Requests
-                    wait_time = 2 ** attempt  # Exponential backoff
-                    print(f"⚠ Rate limit hit, waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                    continue
-                elif response.status_code == 403:  # Forbidden
-                    print(f"✗ Access forbidden (403). Check your User-Agent: {self.user_agent}")
-                    return None
+        records = units.get(unit) or []
+        if not records:
+            return None
+
+        df = pd.DataFrame(records)
+
+        # 날짜 변환
+        if 'end' in df.columns:
+            df['end'] = pd.to_datetime(df['end'], errors='coerce')
+        if 'filed' in df.columns:
+            df['filed'] = pd.to_datetime(df['filed'], errors='coerce')
+
+        # 정렬
+        if 'end' in df.columns:
+            df = df.sort_values('end')
+
+        return df
+
+    def extract_multiple_tags(
+        self,
+        tags: List[str],
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Dict[str, pd.DataFrame]:
+        """여러 태그의 데이터를 한번에 추출"""
+        results: Dict[str, pd.DataFrame] = {}
+        for tag in tags or []:
+            df = self.extract_tag_data(tag, taxonomy, unit)
+            if df is not None and not df.empty:
+                results[tag] = df
+        return results
+
+    # ---------------------------------------------------------------------
+    # 분기/연간 기본 추출 (fallback용, robust/strict 사용 권장)
+    # ---------------------------------------------------------------------
+    def get_quarterly_data(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[pd.DataFrame]:
+        """
+        분기 데이터(Q1~Q4) 추출 (frame에 Q가 있으면 보조로 인식)
+        - 주의: Q4는 FY로만 보고되는 기업도 많음 → robust 버전 사용 권장
+        """
+        df = self.extract_tag_data(tag, taxonomy, unit)
+        if df is None or df.empty:
+            return None
+
+        if 'fp' not in df.columns:
+            return None
+
+        quarterly = df[df['fp'].isin(['Q1', 'Q2', 'Q3', 'Q4'])].copy()
+
+        # frame 기반 보조 인식
+        if 'frame' in df.columns:
+            def _q_from_frame(frame: Any) -> Optional[str]:
+                s = str(frame) if pd.notna(frame) else ''
+                for q in ('Q1', 'Q2', 'Q3', 'Q4'):
+                    if q in s:
+                        return q
+                return None
+
+            from_frame = df[df['frame'].astype(str).str.contains('Q', na=False)].copy()
+            if not from_frame.empty:
+                from_frame['fp_from_frame'] = from_frame['frame'].apply(_q_from_frame)
+                mask = (from_frame['fp'] == 'FY') & (from_frame['fp_from_frame'].notna())
+                from_frame.loc[mask, 'fp'] = from_frame.loc[mask, 'fp_from_frame']
+                from_frame = from_frame.drop(columns=['fp_from_frame'], errors='ignore')
+                quarterly = pd.concat([quarterly, from_frame], ignore_index=True)
+
+        if quarterly.empty:
+            return None
+
+        # 최신 제출 우선
+        if 'filed' in quarterly.columns:
+            quarterly = quarterly.sort_values(['end', 'fp', 'filed'], ascending=[True, True, False])
+            quarterly = quarterly.drop_duplicates(subset=['end', 'fp'], keep='first')
+        else:
+            quarterly = quarterly.drop_duplicates(subset=['end', 'fp'], keep='last')
+
+        # 동일 end에서 val 기준 중복 제거
+        quarterly = quarterly.drop_duplicates(subset=['end', 'val'], keep='last')
+        quarterly = quarterly.sort_values('end')
+
+        return quarterly if not quarterly.empty else None
+
+    def get_annual_data(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[pd.DataFrame]:
+        """
+        연간 데이터(FY) 추출 (frame에서 Q 제외)
+        - 엄격 버전은 get_annual_data_strict 사용 권장
+        """
+        df = self.extract_tag_data(tag, taxonomy, unit)
+        if df is None or df.empty or 'fp' not in df.columns:
+            return None
+
+        annual = df[df['fp'] == 'FY'].copy()
+
+        # 10-K가 아닌 FY가 끼는 경우가 있어 완화 버전에서는 form 필터 생략 가능
+        if 'frame' in annual.columns:
+            annual = annual[~annual['frame'].astype(str).str.contains('Q', na=False)]
+
+        if annual.empty:
+            return None
+
+        return annual.sort_values('end')
+
+    # ---------------------------------------------------------------------
+    # 최신값/시계열
+    # ---------------------------------------------------------------------
+    def get_latest_value(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD',
+        period_type: str = 'quarterly'
+    ) -> Optional[float]:
+        """가장 최근 값 반환"""
+        if period_type == 'quarterly':
+            df = self.get_quarterly_data(tag, taxonomy, unit)
+        elif period_type == 'annual':
+            df = self.get_annual_data(tag, taxonomy, unit)
+        else:
+            df = self.extract_tag_data(tag, taxonomy, unit)
+
+        if df is None or df.empty:
+            return None
+
+        latest = df.sort_values('end', ascending=False).iloc[0]
+        return float(latest.get('val')) if pd.notna(latest.get('val')) else None
+
+    def create_time_series(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD',
+        period_type: str = 'quarterly'
+    ) -> Optional[pd.Series]:
+        """end를 인덱스로 한 시계열 Series 생성"""
+        if period_type == 'quarterly':
+            df = self.get_quarterly_data(tag, taxonomy, unit)
+        elif period_type == 'annual':
+            df = self.get_annual_data(tag, taxonomy, unit)
+        else:
+            df = self.extract_tag_data(tag, taxonomy, unit)
+
+        if df is None or df.empty:
+            return None
+
+        if 'filed' in df.columns:
+            df = df.sort_values(['end', 'filed'], ascending=[True, False]).drop_duplicates('end', keep='first')
+        else:
+            df = df.drop_duplicates('end', keep='last')
+
+        s = pd.Series(df['val'].values, index=df['end'], name=tag)
+        return s.sort_index()
+
+    # ---------------------------------------------------------------------
+    # 강화 로직 (권장 사용)
+    # ---------------------------------------------------------------------
+    def detect_best_revenue_tag(
+        self,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[str]:
+        """
+        Revenue 후보 태그 중 실제 데이터가 존재하는 첫 태그를 자동 선택
+        - 기업별 태그 편차 대응
+        """
+        candidates = [
+            'RevenueFromContractWithCustomerExcludingAssessedTax',  # ASC 606 이후 가장 흔함
+            'SalesRevenueNet',                                      # 'Net sales'
+            'Revenues',                                             # 포괄적인 Revenues
+            'ContractWithCustomerRevenue'                           # (드물게) 유사 개념
+        ]
+        for tag in candidates:
+            df = self.extract_tag_data(tag, taxonomy=taxonomy, unit=unit)
+            if df is not None and not df.empty:
+                return tag
+        return None
+
+    def get_quarterly_data_robust(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[pd.DataFrame]:
+        """
+        분기 데이터(순수 분기) 강건 추출
+        1) frame 기반 순수 분기(Qx) 우선
+        2) YTD만 있는 경우 차분으로 복원
+        3) Q4가 없으면 FY - Q3YTD로 보충
+        """
+        base = self.extract_tag_data(tag, taxonomy, unit)
+        if base is None or base.empty:
+            return None
+
+        q = CompanyFactsParser.build_true_quarterly(base)
+        if q is not None and not q.empty:
+            # ✅ q 컬럼 그대로 반환 (다운스트림 호환)
+            return q
+
+        # fallback: 기본 로직
+        return self.get_quarterly_data(tag, taxonomy, unit)
+
+    def get_annual_data_strict(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[pd.DataFrame]:
+        """
+        연간 데이터(FY) 엄격 추출
+        - fp == 'FY'
+        - form ∈ {10-K, 10-K/A, 20-F, 40-F}
+        - frame에서 Q/YTD 포함 레코드 제거
+        """
+        df = self.extract_tag_data(tag, taxonomy, unit)
+        if df is None or df.empty:
+            return None
+
+        # FY만
+        annual = df[(df.get('fp') == 'FY')].copy()
+        if annual.empty:
+            return None
+
+        # 미국/외국 기업의 연간 보고서 형식 필터
+        if 'form' in annual.columns:
+            annual = annual[annual['form'].astype(str).str.contains(r'10-K|20-F|40-F', na=False)]
+        if annual.empty:
+            return None
+
+        # frame에 Q 또는 YTD 포함된 값 제거 (연간 총액만 남김)
+        if 'frame' in annual.columns:
+            annual = annual[~annual['frame'].astype(str).str.contains(r'Q|YTD', na=False)]
+        if annual.empty:
+            return None
+
+        return annual.sort_values('end')
+
+    # ---------------------------------------------------------------------
+    # 내부 정규화 헬퍼
+    # ---------------------------------------------------------------------
+    @staticmethod
+    def _label_frame(row: pd.Series) -> Tuple[Optional[int], Optional[bool]]:
+        """
+        frame에서 분기(Q1~Q4)와 YTD 여부를 추출
+        - 예: CY2024Q3, CY2024Q3YTD, FY2024 등
+        """
+        f = row.get('frame')
+        if pd.isna(f):
+            return None, None
+        s = str(f)
+        m = re.search(r'Q([1-4])', s)
+        is_ytd = 'YTD' in s
+        return (int(m.group(1)) if m else None), is_ytd
+
+    @staticmethod
+    def build_true_quarterly(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        Company Facts 원시 df에서 '순수 분기' 시계열을 복원
+        - 순수 Qx 우선, 없으면 YTD 차분, 그래도 Q4 없으면 FY-Q3YTD 보충
+        Returns: DataFrame(['end','q','val','fy','fp'])
+        """
+        if df is None or df.empty:
+            return None
+
+        w = df.copy()
+
+        # 날짜 정규화
+        if 'end' in w and not pd.api.types.is_datetime64_any_dtype(w['end']):
+            w['end'] = pd.to_datetime(w['end'], errors='coerce')
+        if 'filed' in w and not pd.api.types.is_datetime64_any_dtype(w['filed']):
+            w['filed'] = pd.to_datetime(w['filed'], errors='coerce')
+
+        # frame/ fp 컬럼이 없을 수 있음 → 방어
+        has_frame = 'frame' in w.columns
+        has_fp = 'fp' in w.columns
+
+        # 분기/ YTD 라벨링
+        if has_frame:
+            lbl = w.apply(lambda r: pd.Series(CompanyFactsParser._label_frame(r)), axis=1)
+            lbl.columns = ['__q', '__ytd']
+            w = pd.concat([w, lbl], axis=1)
+        else:
+            w['__q'] = pd.NA
+            w['__ytd'] = pd.NA
+
+        # (1) 순수분기(Qx & not YTD)
+        pure_q = w[(w['__q'].notna()) & (w['__ytd'] == False)].copy()
+
+        # (2) YTD만 있을 때 차분으로 복원
+        ytd = w[(w['__q'].notna()) & (w['__ytd'] == True)].copy()
+        if (pure_q is None or pure_q.empty) and not ytd.empty:
+            if 'fy' in ytd.columns:
+                ytd = ytd.sort_values(['fy', '__q', 'filed'], ascending=[True, True, False])
+            else:
+                ytd = ytd.sort_values(['__q', 'filed'], ascending=[True, False])
+            ytd = ytd.drop_duplicates(subset=['end', '__q'], keep='first')
+
+            q_vals = []
+            group_key = 'fy' if 'fy' in ytd.columns else None
+            if group_key:
+                groups = ytd.groupby(group_key)
+            else:
+                ytd = ytd.assign(_grp=0)
+                groups = ytd.groupby('_grp')
+
+            for _, g in groups:
+                g = g.sort_values('__q')
+                prev = 0.0
+                for _, r in g.iterrows():
+                    cur = float(r['val']) if pd.notna(r.get('val')) else 0.0
+                    q_val = cur - prev
+                    prev = cur
+                    q_vals.append({
+                        'end': r['end'],
+                        'q': int(r['__q']),
+                        'val': float(q_val),
+                        'fy': r.get('fy'),
+                        'fp': f"Q{int(r['__q'])}"
+                    })
+            pure_q = pd.DataFrame(q_vals)
+
+        # 이 시점에서 'q' 컬럼 보장 (순수분기 경로는 '__q'만 존재할 수 있음)
+        if pure_q is None or pure_q.empty:
+            pure_q = pd.DataFrame(columns=['end', 'q', 'val', 'fy', 'fp'])
+        else:
+            if 'q' not in pure_q.columns:
+                if '__q' in pure_q.columns:
+                    pure_q['q'] = pd.to_numeric(pure_q['__q'], errors='coerce').astype('Int64')
+                    pure_q = pure_q.dropna(subset=['q'])
+                    pure_q['q'] = pure_q['q'].astype(int)
                 else:
-                    print(f"✗ Request failed: {response.status_code} - {url}")
-                    return None
+                    pure_q = pd.DataFrame(columns=['end', 'q', 'val', 'fy', 'fp'])
 
-            except requests.exceptions.Timeout:
-                print(f"✗ Request timeout (attempt {attempt + 1}/{max_retries})")
-                if attempt < max_retries - 1:
-                    time.sleep(2)
-            except requests.exceptions.ConnectionError as e:
-                print(f"✗ Connection error (attempt {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2)
-            except requests.exceptions.RequestException as e:
-                print(f"✗ Request error (attempt {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(1)
+        # (3) 여전히 Q4가 없으면 FY - Q3YTD 보충
+        fy_rows = pd.DataFrame()
+        q3ytd = pd.DataFrame()
 
-        return None
+        if has_fp:
+            fy_rows = w[w['fp'] == 'FY'].copy()
 
-    def get_company_tickers(self) -> Optional[Dict]:
-        """
-        모든 상장 기업의 ticker-CIK 매핑 조회
+        if has_frame:
+            if not fy_rows.empty and 'frame' in fy_rows.columns:
+                fy_rows = fy_rows[~fy_rows['frame'].astype(str).str.contains('Q', na=False)]
+            q3ytd = w[w['frame'].astype(str).str.contains('Q3YTD', na=False)].copy()
 
-        Returns:
-            ticker 정보 딕셔너리
-        """
-        # 캐시 확인
-        if self._tickers_cache is not None:
-            return self._tickers_cache
+        if not fy_rows.empty and not q3ytd.empty:
+            fy_rows = fy_rows.sort_values(['end', 'filed'], ascending=[True, False]).drop_duplicates(['end'])
+            q3ytd = q3ytd.sort_values(['end', 'filed'], ascending=[True, False]).drop_duplicates(['end'])
 
-        # 올바른 URL 사용
-        url = "https://www.sec.gov/files/company_tickers.json"  # 이렇게 변경!
-        data = self._make_request(url)
+            # 연도 키 (회계연도 종료일 기준의 연도)
+            fy_rows['fy_key'] = pd.to_datetime(fy_rows['end'], errors='coerce').dt.year
+            q3ytd['fy_key'] = pd.to_datetime(q3ytd['end'], errors='coerce').dt.year
 
-        if data:
-            self._tickers_cache = data
+            merged = pd.merge(
+                fy_rows[['end', 'val', 'fy_key']],
+                q3ytd[['end', 'val', 'fy_key']],
+                on='fy_key', suffixes=('_fy', '_q3ytd')
+            )
+            if not merged.empty:
+                merged['q4_val'] = merged['val_fy'].astype(float) - merged['val_q3ytd'].astype(float)
+                q4_rows = merged.rename(columns={'end_fy': 'end'})[['end', 'q4_val']]
+                q4_rows['q'] = 4
+                q4_rows['fp'] = 'Q4'
+                q4_rows['fy'] = None
+                q4_rows = q4_rows.rename(columns={'q4_val': 'val'})
+                pure_q = pd.concat([pure_q, q4_rows[['end', 'q', 'val', 'fy', 'fp']]], ignore_index=True)
 
-        return data
-
-    def get_cik_by_ticker(self, ticker: str) -> Optional[str]:
-        """
-        Ticker로 CIK 조회
-
-        Args:
-            ticker: 주식 티커
-
-        Returns:
-            CIK 번호 또는 None
-        """
-        tickers_data = self.get_company_tickers()
-        if not tickers_data:
+        if pure_q.empty:
             return None
 
-        ticker_upper = ticker.upper()
+        pure_q = pure_q.sort_values(['end', 'q']).drop_duplicates(['end', 'q'], keep='last')
+        return pure_q.sort_values('end')
 
-        # 데이터 구조 확인 및 검색
-        for key, item in tickers_data.items():
-            if isinstance(item, dict) and item.get('ticker', '').upper() == ticker_upper:
-                return str(item.get('cik_str'))
+    # -------- 편의 헬퍼: Q4복원 분기 Series --------
+    def create_quarterly_series_robust(
+        self,
+        tag: str,
+        taxonomy: str = 'us-gaap',
+        unit: str = 'USD'
+    ) -> Optional[pd.Series]:
+        """Q4 복원 포함 분기 시리즈 (index=end, values=val)"""
+        dfq = self.get_quarterly_data_robust(tag, taxonomy=taxonomy, unit=unit)
+        if dfq is None or dfq.empty:
+            return None
+        s = (dfq[['end', 'val']]
+             .dropna()
+             .drop_duplicates('end', keep='last')
+             .sort_values('end')
+             .set_index('end')['val']
+             .astype(float))
+        return s
 
+
+# =========================
+# FinancialNormalizer
+# =========================
+class FinancialNormalizer:
+    """
+    CompanyFactsParser를 사용하여
+    - robust 분기 데이터
+    - strict 연간 데이터
+    로 표준화된 DataFrame 생성
+    """
+
+    REV_TAG_CANDIDATES = [
+        'RevenueFromContractWithCustomerExcludingAssessedTax',
+        'SalesRevenueNet',
+        'Revenues',
+        'ContractWithCustomerRevenue',
+    ]
+    NI_TAG_CANDIDATES = ['NetIncomeLoss', 'ProfitLoss']
+    ASSET_TAG_CANDIDATES = ['Assets']
+    LIAB_TAG_CANDIDATES = ['Liabilities']
+    EQ_TAG_CANDIDATES = ['StockholdersEquity']
+    CASH_TAG_CANDIDATES = ['CashAndCashEquivalentsAtCarryingValue', 'Cash']
+
+    def __init__(self, parser: CompanyFactsParser, taxonomy: str = 'us-gaap', unit: str = 'USD'):
+        self.parser = parser
+        self.taxonomy = taxonomy
+        self.unit = unit
+
+    def _detect_first_available(self, candidates: List[str]) -> Optional[str]:
+        for tag in candidates:
+            df = self.parser.extract_tag_data(tag, taxonomy=self.taxonomy, unit=self.unit)
+            if df is not None and not df.empty:
+                return tag
         return None
 
-    def get_company_facts(self, cik: str) -> Optional[Dict]:
+    # robust 분기 시리즈
+    def _fetch_quarterly_series(self, tag: str) -> Optional[pd.Series]:
+        return self.parser.create_quarterly_series_robust(tag, taxonomy=self.taxonomy, unit=self.unit)
+
+    # strict 연간 시리즈
+    def _fetch_annual_series(self, tag: str) -> Optional[pd.Series]:
+        dfa = self.parser.get_annual_data_strict(tag, taxonomy=self.taxonomy, unit=self.unit)
+        if dfa is None or dfa.empty:
+            return None
+        s = (dfa[['end', 'val']]
+             .dropna()
+             .drop_duplicates('end', keep='last')
+             .sort_values('end')
+             .set_index('end')['val']
+             .astype(float))
+        return s
+
+    def create_normalized_dataframe(self, period_type: str = 'quarterly') -> Optional[pd.DataFrame]:
         """
-        특정 기업의 Company Facts 데이터 조회
-
-        Args:
-            cik: CIK 번호 (10자리, 앞에 0 패딩)
-
-        Returns:
-            Company Facts JSON 데이터
+        period_type:
+          - 'quarterly' → robust(Q4 복원)
+          - 'annual'    → strict(FY만)
         """
-        # CIK를 10자리로 패딩
-        cik_padded = str(cik).zfill(10)
-        url = f"{self.BASE_URL}/api/xbrl/companyfacts/CIK{cik_padded}.json"
+        if period_type not in ('quarterly', 'annual'):
+            raise ValueError("period_type must be 'quarterly' or 'annual'")
 
-        return self._make_request(url)
+        # 태그 자동 탐색
+        rev_tag = self.parser.detect_best_revenue_tag() \
+                  or self._detect_first_available(self.REV_TAG_CANDIDATES)
+        ni_tag = self._detect_first_available(self.NI_TAG_CANDIDATES)
+        a_tag = self._detect_first_available(self.ASSET_TAG_CANDIDATES)
+        l_tag = self._detect_first_available(self.LIAB_TAG_CANDIDATES)
+        e_tag = self._detect_first_available(self.EQ_TAG_CANDIDATES)
+        c_tag = self._detect_first_available(self.CASH_TAG_CANDIDATES)
 
-    def get_company_facts_by_ticker(self, ticker: str) -> Optional[Dict]:
-        """
-        Ticker로 Company Facts 조회 (ticker->CIK 변환 포함)
+        cols: Dict[str, pd.Series] = {}
 
-        Args:
-            ticker: 주식 티커 (예: AAPL, MSFT)
+        if period_type == 'quarterly':
+            if rev_tag:
+                s = self._fetch_quarterly_series(rev_tag)
+                if s is not None: cols['revenue'] = s
+            if ni_tag:
+                s = self._fetch_quarterly_series(ni_tag)
+                if s is not None: cols['net_income'] = s
+            if a_tag:
+                s = self._fetch_quarterly_series(a_tag)
+                if s is not None: cols['total_assets'] = s
+            if l_tag:
+                s = self._fetch_quarterly_series(l_tag)
+                if s is not None: cols['total_liabilities'] = s
+            if e_tag:
+                s = self._fetch_quarterly_series(e_tag)
+                if s is not None: cols['stockholders_equity'] = s
+            if c_tag:
+                s = self._fetch_quarterly_series(c_tag)
+                if s is not None: cols['cash'] = s
+        else:  # annual
+            if rev_tag:
+                s = self._fetch_annual_series(rev_tag)
+                if s is not None: cols['revenue'] = s
+            if ni_tag:
+                s = self._fetch_annual_series(ni_tag)
+                if s is not None: cols['net_income'] = s
+            if a_tag:
+                s = self._fetch_annual_series(a_tag)
+                if s is not None: cols['total_assets'] = s
+            if l_tag:
+                s = self._fetch_annual_series(l_tag)
+                if s is not None: cols['total_liabilities'] = s
+            if e_tag:
+                s = self._fetch_annual_series(e_tag)
+                if s is not None: cols['stockholders_equity'] = s
+            if c_tag:
+                s = self._fetch_annual_series(c_tag)
+                if s is not None: cols['cash'] = s
 
-        Returns:
-            Company Facts JSON 데이터
-        """
-        # CIK 조회
-        cik = self.get_cik_by_ticker(ticker)
-
-        if not cik:
-            print(f"✗ Ticker not found: {ticker}")
-            print(f"  Hint: Check if ticker is correct or try get_company_tickers() to see available tickers")
+        if not cols:
             return None
 
-        print(f"  Found CIK for {ticker}: {cik}")
-        return self.get_company_facts(cik)
+        # 병합
+        df = None
+        for name, s in cols.items():
+            df = s.to_frame(name) if df is None else df.join(s.to_frame(name), how='outer')
 
-    def get_submissions(self, cik: str) -> Optional[Dict]:
-        """
-        특정 기업의 제출 문서 메타데이터 조회
+        # 분기 데이터는 ffill 정도만 (연간도 동일 규칙 적용)
+        df = df.sort_index().ffill()
 
-        Args:
-            cik: CIK 번호
-
-        Returns:
-            Submissions JSON 데이터
-        """
-        cik_padded = str(cik).zfill(10)
-        url = f"{self.BASE_URL}/submissions/CIK{cik_padded}.json"
-
-        return self._make_request(url)
-
-    def get_frames_data(self, taxonomy: str, tag: str, unit: str, year: int, quarter: str = None) -> Optional[Dict]:
-        """
-        특정 XBRL 태그의 프레임 데이터 조회 (모든 기업)
-
-        Args:
-            taxonomy: XBRL taxonomy (예: 'us-gaap')
-            tag: XBRL 태그 (예: 'AccountsPayableCurrent')
-            unit: 단위 (예: 'USD')
-            year: 연도
-            quarter: 분기 (선택사항, 예: 'Q1')
-
-        Returns:
-            Frame JSON 데이터
-        """
-        if quarter:
-            frame = f"CY{year}{quarter}"
-        else:
-            frame = f"CY{year}"
-
-        url = f"{self.BASE_URL}/api/xbrl/frames/{taxonomy}/{tag}/{unit}/{frame}.json"
-
-        return self._make_request(url)
-
-    def save_to_file(self, data: Dict, filename: str):
-        """
-        데이터를 JSON 파일로 저장
-
-        Args:
-            data: 저장할 데이터
-            filename: 파일명
-        """
-        try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            print(f"✓ Saved to {filename}")
-        except Exception as e:
-            print(f"✗ Failed to save file: {e}")
-
-    def test_connection(self) -> bool:
-        """
-        SEC API 연결 테스트
-
-        Returns:
-            연결 성공 여부
-        """
-        print(f"Testing connection to SEC EDGAR API...")
-        print(f"User-Agent: {self.user_agent}")
-
-        tickers = self.get_company_tickers()
-
-        if tickers:
-            print(f"✓ Connection successful! Found {len(tickers)} companies")
-            return True
-        else:
-            print(f"✗ Connection failed")
-            print(f"\nTroubleshooting:")
-            print(f"1. Check your internet connection")
-            print(f"2. Verify User-Agent includes email: '{self.user_agent}'")
-            print(f"3. SEC might be blocking requests - try again later")
-            print(f"4. Check if you're behind a firewall/proxy")
-            return False
+        return df
 
 
-def main():
-    """테스트 실행"""
-    print("\n" + "=" * 60)
-    print("SEC EDGAR API Client Test")
-    print("=" * 60)
-
-    # User-Agent 설정 (실제 사용 시 수정 필요)
-    user_agent = 'PersonalResearch stox1224@email.com'
-
-    print(f"\n⚠️  Important: Update user_agent with your email!")
-    print(f"Current: {user_agent}\n")
-
-    client = SECAPIClient(user_agent)
-
-    # 1. 연결 테스트
-    print("\n1. Connection Test")
-    print("-" * 60)
-    if not client.test_connection():
-        print("\n✗ Cannot proceed without connection")
-        return
-
-    # 2. Company tickers 조회
-    print("\n2. Getting company tickers...")
-    print("-" * 60)
-    tickers = client.get_company_tickers()
-    if tickers:
-        print(f"✓ Found {len(tickers)} companies")
-        # 처음 5개만 출력
-        for i, (key, value) in enumerate(list(tickers.items())[:5]):
-            if isinstance(value, dict):
-                print(
-                    f"  {value.get('ticker', 'N/A')}: CIK {value.get('cik_str', 'N/A')} - {value.get('title', 'N/A')}")
-
-    # 3. 특정 기업의 Company Facts 조회 (Apple)
-    print("\n3. Getting Apple (AAPL) company facts...")
-    print("-" * 60)
-    aapl_facts = client.get_company_facts_by_ticker('AAPL')
-    if aapl_facts:
-        print(f"✓ Retrieved Apple company facts")
-        print(f"  Entity: {aapl_facts.get('entityName')}")
-        print(f"  CIK: {aapl_facts.get('cik')}")
-
-        # 사용 가능한 facts 키 출력
-        if 'facts' in aapl_facts:
-            print(f"  Available taxonomies: {list(aapl_facts['facts'].keys())}")
-
-            # US-GAAP facts 샘플 출력
-            if 'us-gaap' in aapl_facts['facts']:
-                us_gaap = aapl_facts['facts']['us-gaap']
-                print(f"  US-GAAP tags count: {len(us_gaap)}")
-                print(f"  Sample tags: {list(us_gaap.keys())[:5]}")
-
-        # 파일로 저장
-        client.save_to_file(aapl_facts, 'aapl_company_facts.json')
-
-    # 4. Submissions 조회
-    print("\n4. Getting Apple submissions...")
-    print("-" * 60)
-    aapl_submissions = client.get_submissions('320193')  # Apple CIK
-    if aapl_submissions:
-        print(f"✓ Retrieved Apple submissions")
-        recent = aapl_submissions.get('filings', {}).get('recent', {})
-        if recent:
-            print(f"  Recent filings: {len(recent.get('accessionNumber', []))}")
-            if recent.get('form'):
-                print(f"  Latest form: {recent.get('form', [])[0]}")
-
-    print("\n" + "=" * 60)
-    print("Test completed!")
-    print("=" * 60)
-
-
+# =========================
+# __main__ : Quick self-test
+# =========================
 if __name__ == "__main__":
-    main()
+    import requests
+
+    headers = {"User-Agent": "Hoyoung Research <stox1224@gmail.com>"}
+    cik_padded = "0000320193"  # Apple
+    url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik_padded}.json"
+    facts = requests.get(url, headers=headers).json()
+
+    parser = CompanyFactsParser(facts)
+    print("Entity:", parser.entity_name, "CIK:", parser.cik)
+
+    # Revenue 태그 자동 탐색
+    tag = parser.detect_best_revenue_tag()
+    print("Selected revenue tag:", tag)
+
+    # Robust 분기 / Strict 연간
+    rev_q = parser.get_quarterly_data_robust(tag) if tag else None
+    rev_fy = parser.get_annual_data_strict(tag) if tag else None
+
+    print("Quarterly rows:", 0 if rev_q is None else len(rev_q))
+    print("Annual rows   :", 0 if rev_fy is None else len(rev_fy))
+    if rev_q is not None:
+        print(rev_q.tail(6))
+    if rev_fy is not None:
+        print(rev_fy.tail(5))
+
+    # Normalizer 사용 예
+    normalizer = FinancialNormalizer(parser)
+    df_quarterly = normalizer.create_normalized_dataframe(period_type='quarterly')
+    df_annual = normalizer.create_normalized_dataframe(period_type='annual')
+
+    print("\n[Quarterly normalized] tail:")
+    if df_quarterly is not None:
+        print(df_quarterly.tail(6))
+
+    print("\n[Annual normalized] tail:")
+    if df_annual is not None:
+        print(df_annual.tail(6))
