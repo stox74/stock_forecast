@@ -11,10 +11,10 @@ Financial Data Normalizer (Robust/Strict 통합판)
 from __future__ import annotations
 from typing import Dict, List, Optional
 import pandas as pd
+import numpy as np
 
 
 class FinancialNormalizer:
-    """재무데이터 표준화 (Robust/Strict)"""
 
     # XBRL 태그 후보 (우선순위 순)
     TAG_MAPPING: Dict[str, List[str]] = {
@@ -410,20 +410,137 @@ class FinancialNormalizer:
                 df_copy[f'{col}_yoy_growth'] = df_copy[col].pct_change(periods=periods) * 100
         return df_copy
 
+    # =========================================================================
+    # (1) 기본 재무비율 계산
+    # =========================================================================
     def calculate_financial_ratios(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        주요 재무비율 및 ROIC 3가지 방법 계산
+        """
         df_copy = df.copy()
+
+        # ---------------------------------------------------------------------
+        # (A) 기본 재무비율
+        # ---------------------------------------------------------------------
         if 'revenue' in df_copy and 'net_income' in df_copy:
             df_copy['profit_margin'] = (df_copy['net_income'] / df_copy['revenue']) * 100
+
         if 'revenue' in df_copy and 'operating_income' in df_copy:
             df_copy['operating_margin'] = (df_copy['operating_income'] / df_copy['revenue']) * 100
+
         if 'current_assets' in df_copy and 'current_liabilities' in df_copy:
             df_copy['current_ratio'] = df_copy['current_assets'] / df_copy['current_liabilities']
+
         if 'total_liabilities' in df_copy and 'stockholders_equity' in df_copy:
             df_copy['debt_to_equity'] = df_copy['total_liabilities'] / df_copy['stockholders_equity']
+
         if 'net_income' in df_copy and 'stockholders_equity' in df_copy:
             df_copy['roe'] = (df_copy['net_income'] / df_copy['stockholders_equity']) * 100
+
         if 'net_income' in df_copy and 'total_assets' in df_copy:
             df_copy['roa'] = (df_copy['net_income'] / df_copy['total_assets']) * 100
+
+        # ---------------------------------------------------------------------
+        # (B) Tax Rate 계산 (없으면 추정)
+        # ---------------------------------------------------------------------
+        if 'tax_rate' in df_copy:
+            tax_rate_used = df_copy['tax_rate']
+        elif 'income_tax_expense' in df_copy and 'pretax_income' in df_copy:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                tax_rate_used = (df_copy['income_tax_expense'] / df_copy['pretax_income'])
+                tax_rate_used = tax_rate_used.clip(lower=0.0, upper=0.5)
+            tax_rate_used = tax_rate_used.fillna(0.21)
+        else:
+            tax_rate_used = pd.Series(0.21, index=df_copy.index)
+        df_copy['tax_rate'] = tax_rate_used
+
+        # ---------------------------------------------------------------------
+        # (C) Net PPE 보강 (gross_ppe - accumulated_depreciation)
+        # ---------------------------------------------------------------------
+        if 'net_ppe' not in df_copy or df_copy['net_ppe'].isna().all():
+            if 'gross_ppe' in df_copy and 'accumulated_depreciation' in df_copy:
+                df_copy['net_ppe'] = df_copy['gross_ppe'] - df_copy['accumulated_depreciation']
+
+        # ---------------------------------------------------------------------
+        # (D) 운영자본 항목
+        # ---------------------------------------------------------------------
+        if 'current_assets' in df_copy and 'cash' in df_copy:
+            df_copy['operating_current_assets'] = df_copy['current_assets'] - df_copy['cash']
+        else:
+            df_copy['operating_current_assets'] = np.nan
+
+        if 'current_liabilities' in df_copy and 'short_term_debt' in df_copy:
+            df_copy['operating_current_liabilities'] = df_copy['current_liabilities'] - df_copy['short_term_debt']
+        else:
+            df_copy['operating_current_liabilities'] = np.nan
+
+        # ---------------------------------------------------------------------
+        # (E) Working Capital 방식 (기존 기본 ROIC)
+        # ---------------------------------------------------------------------
+        roic = pd.Series(np.nan, index=df_copy.index, name='roic')
+        if all(col in df_copy.columns for col in ['operating_income', 'net_ppe',
+                                                 'operating_current_assets', 'operating_current_liabilities']):
+            nopat = df_copy['operating_income'] * (1 - df_copy['tax_rate'])
+            nwc = df_copy['operating_current_assets'] - df_copy['operating_current_liabilities']
+            invested_capital = df_copy['net_ppe'] + nwc
+            valid_mask = invested_capital.replace([np.inf, -np.inf], np.nan).notna() & (invested_capital != 0)
+            roic.loc[valid_mask] = (nopat.loc[valid_mask] / invested_capital.loc[valid_mask]) * 100
+            df_copy['roic'] = roic
+            df_copy['invested_capital_working'] = invested_capital
+        else:
+            df_copy['roic'] = np.nan
+            df_copy['invested_capital_working'] = np.nan
+
+        # ---------------------------------------------------------------------
+        # (F) ROIC 3가지 방법 추가 계산
+        # ---------------------------------------------------------------------
+        nopat = df_copy['operating_income'] * (1 - df_copy['tax_rate'])
+
+        # (1) Standard Method
+        roic_standard = pd.Series(np.nan, index=df_copy.index, name='roic_standard')
+        if 'total_assets' in df_copy and 'current_liabilities' in df_copy:
+            if 'short_term_debt' in df_copy:
+                nibcl = df_copy['current_liabilities'] - df_copy['short_term_debt'].fillna(0)
+            else:
+                nibcl = df_copy['current_liabilities'] * 0.5
+            invested_capital_standard = df_copy['total_assets'] - nibcl
+            valid = invested_capital_standard.replace([np.inf, -np.inf], np.nan).notna() & (invested_capital_standard != 0)
+            roic_standard.loc[valid] = (nopat.loc[valid] / invested_capital_standard.loc[valid]) * 100
+            df_copy['invested_capital_standard'] = invested_capital_standard
+        df_copy['roic_standard'] = roic_standard
+
+        # (2) Capital Structure Method
+        roic_capstruct = pd.Series(np.nan, index=df_copy.index, name='roic_capital_structure')
+        if 'stockholders_equity' in df_copy:
+            equity = df_copy['stockholders_equity'].fillna(0)
+
+            std = df_copy['short_term_debt'] if 'short_term_debt' in df_copy.columns else pd.Series(0,
+                                                                                                    index=df_copy.index,
+                                                                                                    dtype='float64')
+            ltd = df_copy['long_term_debt'] if 'long_term_debt' in df_copy.columns else pd.Series(0,
+                                                                                                  index=df_copy.index,
+                                                                                                  dtype='float64')
+            total_debt = std.fillna(0) + ltd.fillna(0)
+
+            # Excess Cash 계산은 기존대로 유지
+            if 'cash' in df_copy and 'revenue' in df_copy:
+                operating_cash = df_copy['revenue'] * 0.02
+                excess_cash = (df_copy['cash'] - operating_cash).clip(lower=0)
+            elif 'cash' in df_copy:
+                excess_cash = df_copy['cash'] * 0.8
+            else:
+                excess_cash = pd.Series(0, index=df_copy.index, dtype='float64')
+
+            invested_capital_capstruct = equity + total_debt - excess_cash
+            valid = invested_capital_capstruct.replace([np.inf, -np.inf], np.nan).notna() & (invested_capital_capstruct != 0)
+            roic_capstruct.loc[valid] = (nopat.loc[valid] / invested_capital_capstruct.loc[valid]) * 100
+            df_copy['invested_capital_capstruct'] = invested_capital_capstruct
+        df_copy['roic_capital_structure'] = roic_capstruct
+
+        # (3) 평균 ROIC
+        df_copy['roic_working_capital'] = df_copy['roic']
+        df_copy['roic_average'] = df_copy[['roic_standard', 'roic_capital_structure', 'roic_working_capital']].mean(axis=1)
+
         return df_copy
 
     def get_latest_financial_snapshot(self) -> Dict[str, float]:

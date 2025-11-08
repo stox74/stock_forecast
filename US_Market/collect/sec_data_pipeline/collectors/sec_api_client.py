@@ -493,6 +493,26 @@ class FinancialNormalizer:
     LIAB_TAG_CANDIDATES = ['Liabilities']
     EQ_TAG_CANDIDATES = ['StockholdersEquity']
     CASH_TAG_CANDIDATES = ['CashAndCashEquivalentsAtCarryingValue', 'Cash']
+    # 추가: 유동/단기/유형자산 관련 태그
+    CA_TAG_CANDIDATES = ['AssetsCurrent']  # current_assets
+    CL_TAG_CANDIDATES = ['LiabilitiesCurrent']  # current_liabilities
+
+    # short_term_debt: 기업마다 태그 편차가 커서 넓게 커버
+    STD_TAG_CANDIDATES = [
+        'ShortTermBorrowings',
+        'DebtCurrent',
+        'ShortTermDebtAndCapitalLeaseObligations',
+        'CommercialPaper',
+    ]
+
+    # net_ppe 우선, 불가하면 gross - accumulated 로 계산
+    PPE_NET_TAG_CANDIDATES = ['PropertyPlantAndEquipmentNet']
+    PPE_GROSS_TAG_CANDIDATES = ['PropertyPlantAndEquipmentGross']
+    ACCUM_DEP_TAG_CANDIDATES = [
+        'AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment',
+        'PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAccumulatedDepreciationAndAmortization',
+    ]
+
 
     def __init__(self, parser: CompanyFactsParser, taxonomy: str = 'us-gaap', unit: str = 'USD'):
         self.parser = parser
