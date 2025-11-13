@@ -12,7 +12,6 @@ from typing import Optional
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
 except Exception:
     pass
 
@@ -226,8 +225,8 @@ def run_batch(group: str = "all", value_start_date: Optional[str] = None,
     tickers = get_ticker_list(group=group)
     for item in tickers:
         res = process_single_ticker(ticker=item.get('ticker'), hs_code=item.get('hs_code'),
-                                    db_info=db_info, table_name=table_name, horizon_quarter=5,
-                                    psr_horizon_months=13, forecast_date=forecast_date,
+                                    db_info=db_info, table_name=table_name, horizon_quarter=6,
+                                    psr_horizon_months=24, forecast_date=forecast_date,
                                     value_start_date=value_start_date)
         ok += int(res)
         fail += int(not res)
