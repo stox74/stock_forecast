@@ -1,4 +1,29 @@
 # ks_marketcap_loader.py
+import sys, os
+from pathlib import Path
+
+def add_repo_path():
+    """
+    stock_forecast 프로젝트 루트를 자동 탐색하고,
+    해당 경로를 sys.path에 추가하여 import 오류를 방지합니다.
+    """
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        # DATA 폴더가 존재하는 경로를 찾으면 sys.path에 추가
+        if (parent / "DATA").exists():
+            sys.path.insert(0, str(parent))
+            print(f"[INFO] Project root added to sys.path: {parent}")
+            return str(parent)
+    # 만약 못 찾을 경우 대비 - fallback 경로 지정
+    fallback = r"C:\Users\Hoyoung_Park\PyCharmMiscProject\stock_forecast"
+    if os.path.isdir(fallback):
+        sys.path.insert(0, fallback)
+        print(f"[WARNING] Using fallback path: {fallback}")
+        return fallback
+    raise FileNotFoundError("❌ DATA 폴더를 찾을 수 없습니다.")
+
+# 경로 추가 실행
+project_root = add_repo_path()
 
 import pandas as pd
 from datetime import datetime, timedelta
