@@ -541,7 +541,45 @@ class FinancialNormalizer:
         df_copy['roic_working_capital'] = df_copy['roic']
         df_copy['roic_average'] = df_copy[['roic_standard', 'roic_capital_structure', 'roic_working_capital']].mean(axis=1)
 
-        return df_copy
+        # ---------------------------------------------------------------------
+        # (G) ROE, ROA - TTM(최근 4분기 합산 net_income) 기준으로 재계산
+        # ---------------------------------------------------------------------
+        # if 'net_income' in df_copy:
+        #     # 데이터가 시간순(오래된 → 최신)으로 정렬되어 있다고 가정
+        #     # 필요하다면 'date' 컬럼으로 미리 sort 후 이 함수를 호출하는 것이 좋음
+        #     df_copy['net_income_ttm'] = (
+        #         df_copy['net_income']
+        #         .rolling(window=4, min_periods=4)
+        #         .sum()
+        #     )
+        # else:
+        #     df_copy['net_income_ttm'] = np.nan
+        #
+        # # ROE_TTM = (최근 4분기 순이익 합계) / (당기 자기자본)
+        # if 'stockholders_equity' in df_copy and 'net_income_ttm' in df_copy:
+        #     with np.errstate(divide='ignore', invalid='ignore'):
+        #         df_copy['roe_ttm'] = np.where(
+        #             df_copy['stockholders_equity'] != 0,
+        #             (df_copy['net_income_ttm'] / df_copy['stockholders_equity']) * 100,
+        #             np.nan
+        #         )
+        # else:
+        #     df_copy['roe_ttm'] = np.nan
+        #
+        # # ROA_TTM = (최근 4분기 순이익 합계) / (당기 총자산)
+        # if 'total_assets' in df_copy and 'net_income_ttm' in df_copy:
+        #     with np.errstate(divide='ignore', invalid='ignore'):
+        #         df_copy['roa_ttm'] = np.where(
+        #             df_copy['total_assets'] != 0,
+        #             (df_copy['net_income_ttm'] / df_copy['total_assets']) * 100,
+        #             np.nan
+        #         )
+        # else:
+        #     df_copy['roa_ttm'] = np.nan
+        #
+        # return df_copy
+
+
 
     def get_latest_financial_snapshot(self) -> Dict[str, float]:
         if not self.normalized_data:
