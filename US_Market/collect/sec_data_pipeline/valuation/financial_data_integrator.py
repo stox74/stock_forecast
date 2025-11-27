@@ -122,24 +122,42 @@ class FinancialDataIntegrator:
     def add_profitability_ratios(self):
         """수익성 비율 추가"""
 
-        # NOPAT 및 투하자본 계산
+        # ------------------------------------------
+        # 1) Net Income TTM 계산
+        # ------------------------------------------
+        net_income = self.df.get('net_income', pd.Series(np.nan, index=self.df.index))
+
+        # rolling 4 quarters sum = TTM
+        net_income_ttm = net_income.rolling(window=4, min_periods=1).sum()
+        self.df["net_income_ttm"] = net_income_ttm
+
+        # ------------------------------------------
+        # 2) 평균 자기자본 계산 (기초+기말)/2
+        # ------------------------------------------
+        avg_equity = self._get_average_value('stockholders_equity')
+
+        # ------------------------------------------
+        # 3) ROE = Net Income TTM / Avg Equity
+        # ------------------------------------------
+        self.df['roe'] = self._safe_divide(net_income_ttm, avg_equity, 100)
+
+        # ------------------------------------------
+        # ROIC 계산 부분
+        # ------------------------------------------
         nopat = self.calculate_nopat()
         invested_capital = self.calculate_invested_capital()
         avg_invested_capital = self._get_average_value_series(invested_capital)
-
-        # ROIC
         self.df['roic'] = self._safe_divide(nopat, avg_invested_capital, 100)
 
-        # ROA
-        net_income = self.df.get('net_income', pd.Series(np.nan, index=self.df.index))
+        # ------------------------------------------
+        # ROA = Net Income TTM / Avg Total Assets
+        # ------------------------------------------
         avg_total_assets = self._get_average_value('total_assets')
-        self.df['roa'] = self._safe_divide(net_income, avg_total_assets, 100)
+        self.df['roa'] = self._safe_divide(net_income_ttm, avg_total_assets, 100)
 
-        # ROE
-        avg_equity = self._get_average_value('stockholders_equity')
-        self.df['roe'] = self._safe_divide(net_income, avg_equity, 100)
-
-        # Profit Margins
+        # ------------------------------------------
+        # Net Margin 등 기존 마진 계산 (net income TTM 사용 X → 분기 수익성 유지)
+        # ------------------------------------------
         revenue = self.df.get('revenue', pd.Series(np.nan, index=self.df.index))
 
         if 'gross_profit' in self.df.columns:
@@ -148,6 +166,7 @@ class FinancialDataIntegrator:
         if 'operating_income' in self.df.columns:
             self.df['operating_margin'] = self._safe_divide(self.df['operating_income'], revenue, 100)
 
+        # net_margin은 분기 기준 (원래대로 유지)
         self.df['net_margin'] = self._safe_divide(net_income, revenue, 100)
 
     def add_leverage_ratios(self):
