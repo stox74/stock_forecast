@@ -1,5 +1,5 @@
 """
-한국 전체 기업 매출 시계열 예측 배치 처리 스크립트 (개선 버전)
+한국 전체 기업 매출 시계열 예측 배치 처리 스크립트 (디버깅 강화 버전)
 
 이 스크립트는 한국 상장 기업들의 재무 데이터를 바탕으로
 SARIMA, ETS, Theta 모델을 사용하여 매출을 예측합니다.
@@ -8,7 +8,8 @@ SARIMA, ETS, Theta 모델을 사용하여 매출을 예측합니다.
 - 분기별 예측이 일별로 잘못 되는 문제 해결
 - PeriodIndex를 사용하여 정확한 분기 예측 구현
 - 예측 입력 날짜(input_date) 추적 기능 추가
-- ticker 범위 조정 기능 추가 (시작~끝 인덱스 지정)
+- ticker 범위 조정 기능 추가
+- 에러 처리 및 디버깅 기능 대폭 강화
 """
 
 import numpy as np
@@ -177,7 +178,7 @@ def get_all_tickers(db_info: dict) -> list:
         conn.close()
 
 
-# ==================== 5. 매출 데이터 조회 함수 ====================
+# ==================== 5. 매출 데이터 조회 함수 (수정 버전) ====================
 
 def get_quarterly_revenue_simple(
         db_info: dict,
@@ -220,6 +221,19 @@ def get_quarterly_revenue_simple(
         if df.empty:
             return df
 
+        # 컬럼 확인 및 정규화
+        if 'report_date' not in df.columns:
+            # report_date 컬럼이 없으면 다른 날짜 컬럼 찾기
+            date_candidates = ['date', 'Date', 'REPORT_DATE', 'reportDate']
+            for col in date_candidates:
+                if col in df.columns:
+                    df['report_date'] = df[col]
+                    break
+
+            # 그래도 없으면 에러
+            if 'report_date' not in df.columns:
+                raise ValueError(f"날짜 컬럼을 찾을 수 없습니다. 사용 가능한 컬럼: {df.columns.tolist()}")
+
         # Q4 조정
         if adjust_q4:
             df = adjust_fy_to_q4(df)
@@ -261,7 +275,7 @@ def adjust_fy_to_q4(df: pd.DataFrame) -> pd.DataFrame:
     return result_df
 
 
-# ==================== 6. 분기 데이터 준비 함수 (핵심 수정) ====================
+# ==================== 6. 분기 데이터 준비 함수 (에러 처리 강화) ====================
 
 def prepare_quarterly_series(revenue_df: pd.DataFrame, ticker: str) -> pd.Series:
     """
@@ -279,10 +293,24 @@ def prepare_quarterly_series(revenue_df: pd.DataFrame, ticker: str) -> pd.Series
     pd.Series
         PeriodIndex를 가진 분기별 매출 Series
     """
+    if revenue_df.empty:
+        raise ValueError(f"ticker {ticker}: 빈 DataFrame입니다")
+
     df = revenue_df.copy()
 
+    # 필수 컬럼 확인
+    if 'report_date' not in df.columns:
+        raise ValueError(f"ticker {ticker}: 'report_date' 컬럼이 없습니다. 사용 가능한 컬럼: {df.columns.tolist()}")
+
+    if 'thstrm_amount' not in df.columns:
+        raise ValueError(f"ticker {ticker}: 'thstrm_amount' 컬럼이 없습니다. 사용 가능한 컬럼: {df.columns.tolist()}")
+
     # datetime으로 변환
-    df['report_date'] = pd.to_datetime(df['report_date'])
+    df['report_date'] = pd.to_datetime(df['report_date'], errors='coerce')
+
+    # 날짜 변환 실패 확인
+    if df['report_date'].isna().all():
+        raise ValueError(f"ticker {ticker}: 모든 날짜가 변환 실패했습니다")
 
     # 분기 정보 추출
     df['year'] = df['report_date'].dt.year
@@ -290,7 +318,11 @@ def prepare_quarterly_series(revenue_df: pd.DataFrame, ticker: str) -> pd.Series
 
     # 분기 PeriodIndex 생성
     df['period'] = df['year'].astype(str) + 'Q' + df['quarter'].astype(str)
-    df['period'] = pd.PeriodIndex(df['period'], freq='Q')
+
+    try:
+        df['period'] = pd.PeriodIndex(df['period'], freq='Q')
+    except Exception as e:
+        raise ValueError(f"ticker {ticker}: PeriodIndex 생성 실패 - {e}")
 
     # 중복된 분기가 있는지 확인 및 처리
     duplicates = df[df.duplicated(subset=['period'], keep=False)]
@@ -303,6 +335,12 @@ def prepare_quarterly_series(revenue_df: pd.DataFrame, ticker: str) -> pd.Series
 
     # 매출 Series 반환
     series = df['thstrm_amount'].astype(float)
+
+    # NaN 제거
+    series = series.dropna()
+
+    if series.empty:
+        raise ValueError(f"ticker {ticker}: 유효한 매출 데이터가 없습니다")
 
     return series
 
@@ -444,7 +482,196 @@ def convert_to_long_format(df: pd.DataFrame) -> pd.DataFrame:
     return long_df
 
 
-# ==================== 8. 배치 예측 함수 (ticker 범위 지정 추가) ====================
+# ==================== 8. 디버깅용 함수 ====================
+
+def debug_ticker_data(db_info: dict, ticker: str):
+    """
+    특정 ticker의 데이터 구조를 상세히 확인하는 디버깅 함수
+    """
+    print("=" * 80)
+    print(f"🔍 Ticker {ticker} 데이터 구조 분석")
+    print("=" * 80)
+
+    database_name = db_info.get("db") or db_info.get("database")
+
+    conn = pymysql.connect(
+        host=db_info["host"],
+        port=db_info["port"],
+        user=db_info["user"],
+        password=db_info["password"],
+        db=database_name,
+        charset="utf8mb4",
+    )
+
+    try:
+        # 1) 테이블에서 해당 ticker 데이터 확인
+        sql = """
+              SELECT *
+              FROM korea_fs_data_from_DART
+              WHERE ticker = %s LIMIT 5
+              """
+        df = pd.read_sql(sql, conn, params=[ticker.zfill(6)])
+
+        if df.empty:
+            print(f"❌ ticker {ticker}의 데이터가 없습니다")
+            return
+
+        print(f"\n✅ 데이터 존재: 샘플 5개 (전체는 더 많음)")
+
+        # 2) 컬럼 정보
+        print(f"\n📋 컬럼 목록 ({len(df.columns)}개):")
+        for i, col in enumerate(df.columns, 1):
+            dtype = df[col].dtype
+            non_null = df[col].notna().sum()
+            print(f"  {i:2d}. {col:30s} (타입: {dtype}, 비어있지 않은 값: {non_null}/5)")
+
+        # 3) 샘플 데이터
+        print(f"\n📊 샘플 데이터:")
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', None)
+        print(df.head())
+
+        # 4) 매출 데이터 확인
+        sql_revenue = """
+                      SELECT *
+                      FROM korea_fs_data_from_DART
+                      WHERE ticker = %s
+                        AND account_id IN ('ifrs_Revenue', 'ifrs-full_Revenue')
+                      ORDER BY bsns_year, report_date \
+                      """
+        df_revenue = pd.read_sql(sql_revenue, conn, params=[ticker.zfill(6)])
+
+        if df_revenue.empty:
+            print(f"\n❌ 매출 데이터(account_id = ifrs_Revenue)가 없습니다")
+        else:
+            print(f"\n✅ 매출 데이터 존재: {len(df_revenue)}행")
+            print(f"\n📊 매출 데이터 샘플:")
+            display_cols = [col for col in ['bsns_year', 'quarter', 'report_date', 'thstrm_amount', 'account_id']
+                            if col in df_revenue.columns]
+            print(df_revenue[display_cols].head(10))
+
+    finally:
+        conn.close()
+
+    print("\n" + "=" * 80)
+
+
+def test_single_ticker_forecast(db_info: dict, ticker: str, fs_df: pd.DataFrame):
+    """
+    단일 ticker 예측 테스트 (상세 디버깅)
+    """
+    print("=" * 80)
+    print(f"🧪 Ticker {ticker} 예측 테스트")
+    print("=" * 80)
+
+    try:
+        # 1) 데이터 구조 확인
+        print("\n[1단계] 데이터 구조 확인")
+        debug_ticker_data(db_info, ticker)
+
+        # 2) DataGuide 데이터
+        print("\n[2단계] DataGuide 데이터 확인")
+        ticker_dg = 'A' + ticker
+        revenue_dg = fs_df[
+            (fs_df['symbol'] == ticker_dg) &
+            (fs_df['indicator'] == '매출액(천원)')
+            ][['date', 'value']].copy()
+
+        if not revenue_dg.empty:
+            revenue_dg['value'] = revenue_dg['value'] * 1000
+            # ✅ 수정: 컬럼명을 report_date, thstrm_amount로 통일
+            revenue_dg = revenue_dg.rename(columns={'date': 'report_date', 'value': 'thstrm_amount'})
+            print(f"✅ DataGuide 매출 데이터: {len(revenue_dg)}개")
+            print(revenue_dg.tail())
+        else:
+            print("⚠️ DataGuide 매출 데이터 없음")
+
+        # 3) DART 데이터
+        print("\n[3단계] DART 데이터 확인")
+        revenue_dart_df = get_quarterly_revenue_simple(db_info, ticker=ticker)
+
+        if revenue_dart_df.empty:
+            print("❌ DART 매출 데이터 없음")
+            return
+
+        print(f"✅ DART 매출 데이터: {len(revenue_dart_df)}개")
+        print("\n컬럼:", revenue_dart_df.columns.tolist())
+        print("\n데이터 샘플:")
+        display_cols = [col for col in ['bsns_year', 'quarter', 'report_date', 'thstrm_amount']
+                        if col in revenue_dart_df.columns]
+        print(revenue_dart_df[display_cols].tail(10))
+
+        # ✅ 수정: 컬럼명 변경하지 않음
+        revenue_dart = revenue_dart_df[['report_date', 'thstrm_amount']].copy()
+
+        # 4) 데이터 결합
+        print("\n[4단계] 데이터 결합")
+        if not revenue_dg.empty:
+            revenue_combined = pd.concat([revenue_dg, revenue_dart], axis=0) \
+                .drop_duplicates(subset=['report_date'], keep='first') \
+                .sort_values('report_date') \
+                .reset_index(drop=True)
+        else:
+            revenue_combined = revenue_dart
+
+        print(f"✅ 결합 완료: {len(revenue_combined)}개")
+        print(revenue_combined.tail(10))
+
+        # 5) 분기 Series로 변환
+        print("\n[5단계] 분기 Series 변환")
+        series = prepare_quarterly_series(revenue_combined, ticker)
+
+        print(f"✅ 변환 완료: {len(series)}개 분기")
+        print(f"   시작: {series.index[0]}")
+        print(f"   종료: {series.index[-1]}")
+        print(f"\n최근 8분기:")
+        print(series.tail(8))
+
+        # 6) 예측 실행
+        if len(series) < 16:
+            print(f"\n⚠️ 데이터 부족: {len(series)}개 분기 (최소 16개 권장)")
+            return
+
+        print("\n[6단계] 모델 예측 실행")
+        m = 4
+        H = 9
+
+        print("  - SARIMA...")
+        sarima_result = forecast_sarima(y=series, forecast_horizon=H, seasonal_period=m, try_transforms=True)
+
+        print("  - ETS...")
+        ets_result = forecast_ets(y=series, forecast_horizon=H, m=m, try_transforms=True)
+
+        print("  - Theta...")
+        theta_result = forecast_theta(y=series, forecast_horizon=H, m=m, try_transforms=True)
+
+        # 7) 결과 확인
+        print("\n[7단계] 예측 결과")
+        last_period = series.index[-1]
+        forecast_periods = pd.period_range(start=last_period + 1, periods=H, freq='Q')
+
+        result_df = pd.DataFrame({
+            "SARIMA": sarima_result.get("forecast"),
+            "ETS": ets_result.get("forecast"),
+            "Theta": theta_result.get("forecast"),
+        }, index=forecast_periods)
+
+        result_df["Ensemble"] = result_df[["SARIMA", "ETS", "Theta"]].mean(axis=1)
+
+        print(f"✅ 예측 완료")
+        print(f"\n예측 기간: {forecast_periods[0]} ~ {forecast_periods[-1]}")
+        print("\n예측 결과 (억원):")
+        result_display = result_df / 100_000_000
+        print(result_display.round(0).astype(int))
+
+        print("\n✅ 테스트 성공!")
+
+    except Exception as e:
+        print(f"\n❌ 에러 발생: {e}")
+        import traceback
+        traceback.print_exc()
+
+# ==================== 9. 배치 예측 함수 (수정) ====================
 
 def batch_forecast_all_tickers(
         db_info: dict,
@@ -460,44 +687,16 @@ def batch_forecast_all_tickers(
         db_batch_size: int = 50
 ):
     """
-    모든 ticker에 대해 배치로 매출 예측 수행 (분기별 예측 개선)
-
-    Parameters:
-    -----------
-    db_info : dict
-        DB 연결 정보
-    fs_df : pd.DataFrame
-        DataGuide 재무 데이터
-    input_date : str
-        예측 입력 날짜 (YYYY-MM-DD)
-    H : int
-        예측 horizon (분기 수)
-    ticker_start_idx : int, optional
-        처리할 ticker 시작 인덱스 (0-based)
-    ticker_end_idx : int, optional
-        처리할 ticker 종료 인덱스 (exclusive)
-    ticker_list : list, optional
-        직접 지정한 ticker 리스트 (이게 있으면 start/end_idx 무시)
-    save_checkpoint : bool
-        체크포인트 저장 여부
-    checkpoint_interval : int
-        체크포인트 저장 간격
-    save_to_db : bool
-        DB 저장 여부
-    db_batch_size : int
-        DB 배치 크기
+    모든 ticker에 대해 배치로 매출 예측 수행
     """
 
     # 1. ticker 목록 결정
     if ticker_list is not None:
-        # 직접 지정한 리스트 사용
         all_tickers = ticker_list
         print(f"\n📝 사용자 지정 ticker 리스트: {len(all_tickers)}개")
     else:
-        # DB에서 조회
         all_tickers = get_all_tickers(db_info)
 
-        # 범위 지정
         if ticker_start_idx is not None or ticker_end_idx is not None:
             start = ticker_start_idx if ticker_start_idx is not None else 0
             end = ticker_end_idx if ticker_end_idx is not None else len(all_tickers)
@@ -532,7 +731,7 @@ def batch_forecast_all_tickers(
 
             if not revenue_dg.empty:
                 revenue_dg['value'] = revenue_dg['value'] * 1000
-                revenue_dg.columns = ['date', 'revenue']
+                revenue_dg = revenue_dg.rename(columns={'date': 'report_date', 'value': 'thstrm_amount'})
 
             # ---- DART 데이터 ----
             revenue_dart_df = get_quarterly_revenue_simple(db_info, ticker=ticker)
@@ -541,29 +740,29 @@ def batch_forecast_all_tickers(
                 error_list.append((ticker, "DART 데이터 없음"))
                 continue
 
+            # ✅ 핵심 수정: 컬럼명을 변경하지 말고 그대로 사용
             revenue_dart = revenue_dart_df[['report_date', 'thstrm_amount']].copy()
-            revenue_dart.columns = ['date', 'revenue']
 
             # ---- 데이터 결합 ----
             if not revenue_dg.empty:
                 revenue_combined = pd.concat([revenue_dg, revenue_dart], axis=0) \
-                    .drop_duplicates(subset=['date'], keep='first') \
-                    .sort_values('date') \
+                    .drop_duplicates(subset=['report_date'], keep='first') \
+                    .sort_values('report_date') \
                     .reset_index(drop=True)
             else:
                 revenue_combined = revenue_dart
 
-            # ---- 분기 Series로 변환 (핵심 수정) ----
+            # ---- 분기 Series로 변환 ----
             series = prepare_quarterly_series(revenue_combined, ticker)
 
             # 최소 데이터 길이 검사
             n = len(series)
-            if n < 16:  # 분기 데이터는 최소 4년(16분기) 권장
+            if n < 16:
                 error_list.append((ticker, f"데이터 부족: {n}개 분기"))
                 continue
 
             # ---- 계절성 파라미터 ----
-            m = 4  # 분기 데이터의 계절성은 항상 4
+            m = 4
 
             # ---- 모델별 예측 ----
             sarima_result = forecast_sarima(
@@ -587,10 +786,8 @@ def batch_forecast_all_tickers(
                 try_transforms=True
             )
 
-            # ---- 결과 DataFrame 생성 (PeriodIndex 사용) ----
+            # ---- 결과 DataFrame 생성 ----
             last_period = series.index[-1]
-
-            # 미래 분기 생성
             forecast_periods = pd.period_range(
                 start=last_period + 1,
                 periods=H,
@@ -603,12 +800,9 @@ def batch_forecast_all_tickers(
                 "Theta": theta_result.get("forecast"),
             }, index=forecast_periods)
 
-            # 앙상블
             result_df["Ensemble"] = result_df[["SARIMA", "ETS", "Theta"]].mean(axis=1)
             result_df['ticker'] = ticker
-
-            # DatetimeIndex로 변환 (DB 저장용)
-            result_df['date'] = result_df.index.to_timestamp()
+            result_df['date'] = result_df.index.to_timestamp(how='end').date
             result_df.reset_index(drop=True, inplace=True)
 
             # 결과 저장
@@ -624,14 +818,12 @@ def batch_forecast_all_tickers(
                     index=False,
                     encoding='utf-8-sig'
                 )
-                tqdm.write(f"💾 체크포인트 저장: {success_count}개 완료 ({checkpoint_file})")
+                tqdm.write(f"💾 체크포인트 저장: {success_count}개 완료")
 
                 # DB에도 저장
                 if save_to_db:
                     try:
-                        # long format으로 변환
                         long_checkpoint_df = convert_to_long_format(checkpoint_df)
-                        # DB에 저장 (input_date 포함)
                         save_to_db_batch(
                             long_checkpoint_df,
                             db_info,
@@ -639,26 +831,17 @@ def batch_forecast_all_tickers(
                             batch_size=db_batch_size
                         )
                         tqdm.write(f"💾 DB 저장 완료: {len(long_checkpoint_df)}행")
-
-                        # 메모리 정리
                         del long_checkpoint_df
 
                     except Exception as db_error:
                         tqdm.write(f"⚠️ DB 저장 실패: {db_error}")
 
-                # 체크포인트 저장 후 all_results 메모리 정리
-                tqdm.write(f"🧹 메모리 정리 중... (저장된 {success_count}개 데이터)")
-
-                # all_results 리스트 비우기 (DB와 CSV에 이미 저장됨)
+                tqdm.write(f"🧹 메모리 정리 중...")
                 all_results.clear()
-
-                # 가비지 컬렉션 강제 실행
                 gc.collect()
-
                 tqdm.write(f"✅ 메모리 정리 완료")
 
         except Exception as e:
-            # 에러 발생 시 리스트에 추가하고 계속 진행
             error_list.append((ticker, str(e)))
             continue
 
@@ -666,10 +849,9 @@ def batch_forecast_all_tickers(
     checkpoint_file = f'revenue_forecast_checkpoint_{input_date}.csv'
 
     if save_checkpoint and os.path.exists(checkpoint_file):
-        print(f"\n📂 체크포인트 파일에서 최종 데이터 로딩 중... ({checkpoint_file})")
+        print(f"\n📂 체크포인트 파일에서 최종 데이터 로딩 중...")
         final_df = pd.read_csv(checkpoint_file)
 
-        # all_results에 남은 데이터가 있으면 추가
         if all_results:
             remaining_df = pd.concat(all_results, axis=0, ignore_index=True)
             final_df = pd.concat([final_df, remaining_df], axis=0, ignore_index=True)
@@ -698,14 +880,9 @@ def batch_forecast_all_tickers(
             print("📊 최종 결과를 DB에 저장 중...")
             print("=" * 70)
 
-            # long format으로 변환
             long_final_df = convert_to_long_format(final_df)
             print(f"✅ Long format 변환 완료: {len(long_final_df)}행")
-            print(f"   - 원본(Wide): {len(final_df)}행")
-            print(f"   - 변환(Long): {len(long_final_df)}행")
-            print(f"   - 컬럼: {long_final_df.columns.tolist()}")
 
-            # DB에 저장 (input_date 포함)
             save_to_db_batch(
                 long_final_df,
                 db_info,
@@ -714,19 +891,16 @@ def batch_forecast_all_tickers(
                 batch_size=db_batch_size
             )
 
-            # 메모리 정리
             del long_final_df
             gc.collect()
 
         except Exception as db_error:
             print(f"⚠️ 최종 DB 저장 실패: {db_error}")
-            print("CSV 파일은 정상적으로 저장됩니다.")
 
     # ---- 에러 요약 ----
     if error_list:
         print(f"\n❌ 에러 발생: {len(error_list)}개 ticker")
 
-        # 에러 타입별 집계
         error_types = {}
         for ticker, error in error_list:
             error_key = error.split(':')[0] if ':' in error else error
@@ -738,14 +912,13 @@ def batch_forecast_all_tickers(
 
     return final_df, error_list
 
-
-# ==================== 9. 메인 실행 함수 ====================
+# ==================== 10. 메인 실행 함수 ====================
 
 def main():
     """메인 실행 함수"""
 
     print("=" * 80)
-    print("한국 전체 기업 매출 시계열 예측 (입력날짜 추적 버전)")
+    print("한국 전체 기업 매출 시계열 예측 (디버깅 강화 버전)")
     print("=" * 80)
     print()
 
@@ -753,7 +926,34 @@ def main():
     db_info = get_db_config()
     print(f"✅ DB 연결 정보 설정 완료 (host: {db_info['host']})")
 
-    # 2. 입력 날짜 설정
+    # 2. DataGuide 데이터 로드
+    print("\n📊 DataGuide 데이터 로딩 중...")
+    try:
+        fs_df = fetch_table_data(db_info, "korea_fs_data")
+        print(f"✅ DataGuide 데이터 로드 완료: {len(fs_df):,}행")
+    except Exception as e:
+        print(f"⚠️ DataGuide 데이터 로드 실패: {e}")
+        fs_df = pd.DataFrame()
+
+    # 3. 실행 모드 선택
+    print("\n" + "=" * 80)
+    print("실행 모드 선택")
+    print("=" * 80)
+    print("0. 디버그 모드 (단일 ticker 상세 분석)")
+    print("1. 테스트 모드 (처음 10개 ticker)")
+    print("2. 범위 지정 (시작~끝 인덱스)")
+    print("3. 전체 실행 (모든 ticker)")
+
+    choice = input("\n선택 (0, 1, 2 또는 3, 기본값=0): ").strip() or "0"
+
+    if choice == "0":
+        # 디버그 모드
+        print("\n🔧 디버그 모드")
+        test_ticker = input("테스트할 ticker 입력 (기본값: 000020): ").strip() or "000020"
+        test_single_ticker_forecast(db_info, test_ticker, fs_df)
+        return
+
+    # 입력 날짜 설정
     default_input_date = datetime.now().strftime('%Y-%m-%d')
     print(f"\n📅 예측 입력 날짜 설정")
     print(f"   기본값: {default_input_date} (오늘)")
@@ -761,7 +961,6 @@ def main():
 
     if input_date_input:
         try:
-            # 날짜 형식 검증
             datetime.strptime(input_date_input, '%Y-%m-%d')
             input_date = input_date_input
         except ValueError:
@@ -772,41 +971,17 @@ def main():
 
     print(f"✅ 입력 날짜: {input_date}")
 
-    # 3. DataGuide 데이터 로드
-    print("\n📊 DataGuide 데이터 로딩 중...")
-    try:
-        fs_df = fetch_table_data(db_info, "korea_fs_data")
-        print(f"✅ DataGuide 데이터 로드 완료: {len(fs_df):,}행")
-    except Exception as e:
-        print(f"❌ DataGuide 데이터 로드 실패: {e}")
-        print("DART 데이터만으로 진행합니다.")
-        fs_df = pd.DataFrame()
-
-    # 4. 실행 모드 선택
-    print("\n" + "=" * 80)
-    print("실행 모드 선택")
-    print("=" * 80)
-    print("1. 테스트 모드 (처음 10개 ticker)")
-    print("2. 범위 지정 (시작~끝 인덱스)")
-    print("3. 전체 실행 (모든 ticker)")
-
-    choice = input("\n선택 (1, 2 또는 3, 기본값=1): ").strip() or "1"
-
     ticker_start_idx = None
     ticker_end_idx = None
     ticker_list = None
 
     if choice == "1":
-        # 테스트 모드
         ticker_start_idx = 0
         ticker_end_idx = 10
-        print(f"\n🧪 테스트 모드 선택: 처음 10개 ticker 처리")
+        print(f"\n🧪 테스트 모드: 처음 10개 ticker")
 
     elif choice == "2":
-        # 범위 지정
         print("\n📌 ticker 범위 지정")
-
-        # 전체 ticker 수 확인
         all_tickers_temp = get_all_tickers(db_info)
         total_count = len(all_tickers_temp)
         print(f"   전체 ticker 수: {total_count}개")
@@ -818,7 +993,6 @@ def main():
             ticker_start_idx = int(start_input) if start_input else 0
             ticker_end_idx = int(end_input) if end_input else total_count
 
-            # 범위 검증
             if ticker_start_idx < 0 or ticker_start_idx >= total_count:
                 print(f"⚠️ 시작 인덱스가 범위를 벗어났습니다. 0으로 설정합니다.")
                 ticker_start_idx = 0
@@ -835,14 +1009,12 @@ def main():
             ticker_end_idx = None
 
     else:
-        # 전체 실행
-        print("\n🚀 전체 실행 모드 선택: 모든 ticker 처리")
+        print("\n🚀 전체 실행 모드")
 
-    # 5. 배치 예측 실행
+    # 배치 예측 실행
     print("\n" + "=" * 80)
     print("예측 시작")
     print("=" * 80)
-    print()
 
     result_df, error_list = batch_forecast_all_tickers(
         db_info=db_info,
@@ -858,24 +1030,17 @@ def main():
         db_batch_size=50
     )
 
-    # 6. 결과 저장
+    # 결과 저장
     if not result_df.empty:
         output_file = f'revenue_forecast_{input_date}.csv'
         result_df.to_csv(output_file, index=False, encoding='utf-8-sig')
         print(f"\n✅ 최종 결과 저장: {output_file}")
         print(f"   - 총 {len(result_df)}행")
         print(f"   - ticker 개수: {result_df['ticker'].nunique()}개")
-
-        # 결과 샘플 출력
-        print("\n📊 결과 샘플 (처음 5행):")
+        print("\n📊 결과 샘플:")
         print(result_df.head())
 
-        # 예측 기간 확인
-        print("\n📅 예측 기간:")
-        print(f"   - 시작: {result_df['date'].min()}")
-        print(f"   - 종료: {result_df['date'].max()}")
-
-    # 7. 에러 로그 저장
+    # 에러 로그 저장
     if error_list:
         error_file = f'revenue_forecast_errors_{input_date}.csv'
         error_df = pd.DataFrame(error_list, columns=['ticker', 'error'])
@@ -888,7 +1053,7 @@ def main():
     print("=" * 80)
 
 
-# ==================== 10. 스크립트 실행 ====================
+# ==================== 11. 스크립트 실행 ====================
 
 if __name__ == "__main__":
     try:
