@@ -250,7 +250,7 @@ if __name__ == "__main__":
     us_import_month, us_import_quarter = get_us_import_data_parallel(
         hs_list=hs_code,
         start='2013-01',
-        end='2025-07',
+        end='2025-09',
         api_key=api_key,
         max_workers=50  # 동시 실행 스레드 수 (30-100 사이 권장)
     )
