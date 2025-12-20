@@ -4,63 +4,84 @@
 - hs_code: 수출 데이터와 연동할 HS Code (없으면 None)
 """
 
-# 전체 티커 리스트
+# ==================== 전체 티커 리스트 (최종본) ====================
+
 ALL_TICKERS = [
-    {'ticker': 'A005930', 'hs_code': '854232'},  # 삼성전자 - 반도체 0
-    {'ticker': 'A000660', 'hs_code': '854232'},     # SK하이닉스 0
-    {'ticker': 'A051910', 'hs_code': None},     # LG화학
-    {'ticker': 'A035420', 'hs_code': None},     # NAVER
-    {'ticker': 'A005380', 'hs_code': '8703'},    # 현대차 0
-    {'ticker': 'A006400', 'hs_code': '850760'},  # 삼성SDI 0
-    {'ticker': 'A035720', 'hs_code': None},      # 카카오
-    {'ticker': 'A000270', 'hs_code': '8703'},    # 기아 0
-    {'ticker': 'A068270', 'hs_code': '300214'},  # 셀트리온
-    {'ticker': 'A207940', 'hs_code': '300214'},  # 삼성바이오로직스
-    {'ticker': 'A042700', 'hs_code': '854232'},  # 한미반도체 0
-    {'ticker': 'A043150', 'hs_code': '902213'},  # 바텍
-    {'ticker': 'A131290', 'hs_code': '903090'},  # 티에스이 0
-    {'ticker': 'A006910', 'hs_code': '853720'},  # 보성파워텍 0
-    {'ticker': 'A140860', 'hs_code': '901210'},  # 파크시스템
-    {'ticker': 'A009150', 'hs_code': '8542'},    # 삼성전기 0
-    {'ticker': 'A095610', 'hs_code': '8486208410'},  # 테스 0
-    {'ticker': 'A001440', 'hs_code': '854460'},  # 대한전선
-    {'ticker': 'A000500', 'hs_code': '854460'},  # 가온전선
-    {'ticker': 'A004000', 'hs_code': '281512'},  # 롯데정밀화학
-    {'ticker': 'A010120', 'hs_code': '850650'},  # LS ELEC 0
-    {'ticker': 'A044820', 'hs_code': '330499'},  # 코스맥스 비티아이 0
-    {'ticker': 'A010140', 'hs_code': '8408103000'},  # 삼성중공업 0
-    {'ticker': 'A011780', 'hs_code': '292610'},  # 금호석유화학
-    {'ticker': 'A033500', 'hs_code': '730890'},  # 동성화인텍 0
-    {'ticker': 'A036190', 'hs_code': '8502'},    # 금화피에스시 0
-    {'ticker': 'A042370', 'hs_code': '853530'},  # 비츠로테크 0
-    {'ticker': 'A042660', 'hs_code': '8408103000'},  # 한화오션 0
-    {'ticker': 'A375500', 'hs_code': '850423'},  # DL이앤씨 0
-    {'ticker': 'A052690', 'hs_code': '850423'},  # 한전기술 0
-    {'ticker': 'A068270', 'hs_code': '300214'},  # 삼성바이오로직스
-    {'ticker': 'A071280', 'hs_code': '848630'},  # 로체시스템 0
-    {'ticker': 'A077360', 'hs_code': '710610'},  # 덕산하이메탈 0
-    {'ticker': 'A082740', 'hs_code': '8408103000'},  # 한화엔진 0
-    {'ticker': 'A103140', 'hs_code': '7404'},  # 풍산 0
-    {'ticker': 'A103590', 'hs_code': '854442'},  # 일진전기
-    {'ticker': 'A105630', 'hs_code': '6203'},  # 한세실업 0
-    {'ticker': 'A114810', 'hs_code': '848640'},  # 한솔아이원스 0
-    {'ticker': 'A123700', 'hs_code': '840820'},  # SJM 0
-    {'ticker': 'A161390 ', 'hs_code': '401120'},  # 한국타이어
-    {'ticker': 'A073240', 'hs_code': '401120'},  # 금호타이어
-    {'ticker': 'A002350', 'hs_code': '401120'},  # 넥센타이어
+    {'ticker': 'A005930', 'hs_code': '854232'},      # 삼성전자
+    {'ticker': 'A000660', 'hs_code': '854232'},      # SK하이닉스
+    {'ticker': 'A051910', 'hs_code': None},          # LG화학
+    {'ticker': 'A035420', 'hs_code': None},          # NAVER
+    {'ticker': 'A005380', 'hs_code': '8703'},        # 현대차
+    {'ticker': 'A006400', 'hs_code': '850760'},      # 삼성SDI
+    {'ticker': 'A035720', 'hs_code': None},          # 카카오
+    {'ticker': 'A000270', 'hs_code': '8703'},        # 기아
+    {'ticker': 'A068270', 'hs_code': '300214'},      # 셀트리온
+    {'ticker': 'A207940', 'hs_code': '300214'},      # 삼성바이오로직스
+    {'ticker': 'A042700', 'hs_code': '854232'},      # 한미반도체
+    {'ticker': 'A043150', 'hs_code': '902213'},      # 바텍
+    {'ticker': 'A131290', 'hs_code': '903090'},      # 티에스이
+    {'ticker': 'A006910', 'hs_code': '853720'},      # 보성파워텍
+    {'ticker': 'A140860', 'hs_code': '901210'},      # 파크시스템
+    {'ticker': 'A009150', 'hs_code': '8542'},        # 삼성전기
+    {'ticker': 'A095610', 'hs_code': '8486208410'},  # 테스
+    {'ticker': 'A001440', 'hs_code': '854460'},      # 대한전선
+    {'ticker': 'A000500', 'hs_code': '854460'},      # 가온전선
+    {'ticker': 'A004000', 'hs_code': '281512'},      # 롯데정밀화학
+    {'ticker': 'A010120', 'hs_code': '850650'},      # LS ELECTRIC
+    {'ticker': 'A044820', 'hs_code': '330499'},      # 코스맥스비티아이
+    {'ticker': 'A010140', 'hs_code': '8408103000'},  # 삼성중공업
+    {'ticker': 'A011780', 'hs_code': '292610'},      # 금호석유
+    {'ticker': 'A033500', 'hs_code': '730890'},      # 동성화인텍
+    {'ticker': 'A036190', 'hs_code': '8502'},        # 금화피에스시
+    {'ticker': 'A042370', 'hs_code': '853530'},      # 비츠로테크
+    {'ticker': 'A042660', 'hs_code': '8408103000'},  # 한화오션
+    {'ticker': 'A375500', 'hs_code': '850423'},      # DL이앤씨
+    {'ticker': 'A052690', 'hs_code': '850423'},      # 한전기술
+    {'ticker': 'A071280', 'hs_code': '848630'},      # 로체시스템
+    {'ticker': 'A077360', 'hs_code': '710610'},      # 덕산하이메탈
+    {'ticker': 'A082740', 'hs_code': '8408103000'},  # 한화엔진
+    {'ticker': 'A103140', 'hs_code': '7404'},        # 풍산
+    {'ticker': 'A103590', 'hs_code': '854442'},      # 일진전기
+    {'ticker': 'A105630', 'hs_code': '6203'},        # 한세실업
+    {'ticker': 'A114810', 'hs_code': '848640'},      # 한솔아이원스
+    {'ticker': 'A123700', 'hs_code': '840820'},      # SJM
+    {'ticker': 'A161390', 'hs_code': '401120'},      # 한국타이어 (공백 수정 완료)
+    {'ticker': 'A073240', 'hs_code': '401120'},      # 금호타이어
+    {'ticker': 'A002350', 'hs_code': '401120'},      # 넥센타이어
     {'ticker': 'A253590', 'hs_code': '9031809091'},  # 네오셈
-    {'ticker': 'A298040', 'hs_code': '850422'},  # 효성중공업 0
-    {'ticker': 'A007690', 'hs_code': '390730'},  # 국도화학
-    {'ticker': 'A131970', 'hs_code': '854232'},  # 두산테스나 0
-    {'ticker': 'A033100', 'hs_code': '8504'},  # 제룡전기 0
-    {'ticker': 'A098120', 'hs_code': '854232'},  # 마이크로 컨택솔 0
-    {'ticker': 'A214150', 'hs_code': None},  # 클래시스
-    {'ticker': 'A009160', 'hs_code': None},  # 심팩
-    {'ticker': 'A058470', 'hs_code': "848690"},  # 리노산업 상관관계 0.8
-    {'ticker': 'A003230', 'hs_code': "1902301010"},  # 삼양식품 상관관계 0.6
-    {'ticker': 'A353200', 'hs_code': "853400"},  # 대덕전자 상관관계 0.6
-    {'ticker': 'A007660', 'hs_code': "8529909643"}, #이수페타시스 상관관계 0.55
+    {'ticker': 'A298040', 'hs_code': '850422'},      # 효성중공업
+    {'ticker': 'A007690', 'hs_code': '390730'},      # 국도화학
+    {'ticker': 'A131970', 'hs_code': '854232'},      # 두산테스나
+    {'ticker': 'A033100', 'hs_code': '8504'},        # 제룡전기
+    {'ticker': 'A098120', 'hs_code': '854232'},      # 마이크로컨택솔
+    {'ticker': 'A214150', 'hs_code': None},          # 클래시스
+    {'ticker': 'A009160', 'hs_code': None},          # 심팩
+    {'ticker': 'A058470', 'hs_code': '848690'},      # 리노공업
+    {'ticker': 'A003230', 'hs_code': '1902301010'},  # 삼양식품
+    {'ticker': 'A353200', 'hs_code': '853400'},      # 대덕전자
+    {'ticker': 'A007660', 'hs_code': '8529909643'},  # 이수페타시스
+    {'ticker': 'A066970', 'hs_code': None},          # 엘앤에프
+    {'ticker': 'A059090', 'hs_code': None},          # 미코
+    {'ticker': 'A012450', 'hs_code': None},          # 한화에어로스페이스
+    {'ticker': 'A095660', 'hs_code': None},          # 네오위즈
+    {'ticker': 'A025980', 'hs_code': None},          # 아난티
+    {'ticker': 'A032500', 'hs_code': None},          # 케이엠버블유
+    {'ticker': 'A064350', 'hs_code': None},          # 현대로템
+    {'ticker': 'A035900', 'hs_code': None},          # JYP Ent
+    {'ticker': 'A031980', 'hs_code': None},          # 피에스케이홀딩스
+    {'ticker': 'A009540', 'hs_code': None},          # HD한국조선해양
+    {'ticker': 'A006730', 'hs_code': None},          # 서부TD
+    {'ticker': 'A080220', 'hs_code': None},          # 제주반도체
+    {'ticker': 'A028300', 'hs_code': None},          # HLB
+    {'ticker': 'A033240', 'hs_code': None},          # 자화전자
+    {'ticker': 'A067160', 'hs_code': None},          # SOOP (아프리카TV)
+    {'ticker': 'A023160', 'hs_code': None},          # 태광
+    {'ticker': 'A052400', 'hs_code': None},          # 코나아이
+    {'ticker': 'A037270', 'hs_code': None},          # YG PLUS
+    {'ticker': 'A060250', 'hs_code': None},          # NHN KCP
 ]
+
+
 
 # 테스트용 소수 티커 리스트
 TEST_TICKERS = [
