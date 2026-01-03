@@ -6,7 +6,6 @@ SEC Bulk Data Downloader
 대량의 재무데이터를 효율적으로 다운로드
 """
 
-import pandas as pd
 import os
 import json
 import time
@@ -36,72 +35,59 @@ class BulkDownloader:
         self.company_facts_dir.mkdir(exist_ok=True)
         self.submissions_dir = self.output_dir / "submissions"
         self.submissions_dir.mkdir(exist_ok=True)
-
-    def download_company_facts(self, ticker: str, save: bool = True, start_date: str = None) -> Optional[Dict]:
+    
+    def download_company_facts(self, ticker: str, save: bool = True) -> Optional[Dict]:
         """
-        단일 기업 데이터 다운로드 및 날짜 필터링
+        단일 기업의 Company Facts 다운로드
+        
         Args:
-            start_date: 'YYYY-MM-DD' 형식의 문자열. 이 날짜 이후 데이터만 유지
+            ticker: 주식 티커
+            save: 파일로 저장 여부
+            
+        Returns:
+            Company Facts 데이터
         """
         try:
             data = self.sec_client.get_company_facts_by_ticker(ticker)
-
-            if data and start_date:
-                # 데이터 내의 모든 facts를 순회하며 날짜 필터링 적용
-                # SEC API는 전체 데이터를 주므로, 저장 전에 불필요한 과거 데이터를 쳐냅니다.
-                sd = pd.to_datetime(start_date)
-                for tax in data.get('facts', {}).values():
-                    for tag_info in tax.values():
-                        if 'units' in tag_info:
-                            for unit, records in tag_info['units'].items():
-                                # start_date 이후의 데이터만 필터링
-                                tag_info['units'][unit] = [
-                                    r for r in records
-                                    if pd.to_datetime(r.get('end')) >= sd
-                                ]
-
+            
             if data and save:
                 filename = self.company_facts_dir / f"{ticker.upper()}.json"
                 with open(filename, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
-
+            
             return data
+            
         except Exception as e:
             print(f"✗ Error downloading {ticker}: {e}")
             return None
-
-    def download_company_facts(self, ticker: str, save: bool = True, start_date: str = None) -> Optional[Dict]:
+    
+    def download_company_facts_batch(self, tickers: List[str], 
+                                     callback: Optional[Callable] = None) -> Dict[str, Dict]:
         """
-        단일 기업 데이터 다운로드 및 날짜 필터링
+        여러 기업의 Company Facts 배치 다운로드
+        
         Args:
-            start_date: 'YYYY-MM-DD' 형식의 문자열. 이 날짜 이후 데이터만 유지
+            tickers: 티커 리스트
+            callback: 각 다운로드 완료 시 호출될 콜백 함수 (ticker, data, index, total)
+            
+        Returns:
+            {ticker: data} 딕셔너리
         """
-        try:
-            data = self.sec_client.get_company_facts_by_ticker(ticker)
-
-            if data and start_date:
-                # 데이터 내의 모든 facts를 순회하며 날짜 필터링 적용
-                # SEC API는 전체 데이터를 주므로, 저장 전에 불필요한 과거 데이터를 쳐냅니다.
-                sd = pd.to_datetime(start_date)
-                for tax in data.get('facts', {}).values():
-                    for tag_info in tax.values():
-                        if 'units' in tag_info:
-                            for unit, records in tag_info['units'].items():
-                                # start_date 이후의 데이터만 필터링
-                                tag_info['units'][unit] = [
-                                    r for r in records
-                                    if pd.to_datetime(r.get('end')) >= sd
-                                ]
-
-            if data and save:
-                filename = self.company_facts_dir / f"{ticker.upper()}.json"
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-
-            return data
-        except Exception as e:
-            print(f"✗ Error downloading {ticker}: {e}")
-            return None
+        results = {}
+        total = len(tickers)
+        
+        print(f"\n다운로드 시작: {total}개 ticker")
+        print(f"동시 다운로드: {self.max_workers}개 스레드")
+        print("=" * 60)
+        
+        start_time = time.time()
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # 모든 다운로드 작업 제출
+            future_to_ticker = {
+                executor.submit(self.download_company_facts, ticker): ticker 
+                for ticker in tickers
+            }
             
             # 완료된 작업 처리
             completed = 0

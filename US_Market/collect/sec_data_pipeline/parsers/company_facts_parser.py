@@ -253,27 +253,164 @@ class CompanyFactsParser:
         return None
 
     def get_quarterly_data_robust(
-        self,
-        tag: str,
-        taxonomy: str = 'us-gaap',
-        unit: str = 'USD'
+            self,
+            tag: str,
+            taxonomy: str = 'us-gaap',
+            unit: str = 'USD'
     ) -> Optional[pd.DataFrame]:
         """
         분기 데이터(순수 분기) 강건 추출
         1) frame 기반 순수 분기(Qx) 우선
-        2) YTD만 있는 경우 차분으로 복원
-        3) Q4가 없으면 FY - Q3YTD로 보충
+        2) YTD만 있는 경우 차분으로 복원 (build_true_quarterly에 위임)
+        3) Q4가 없으면 FY - Q3YTD (build_true_quarterly에 위임)
+        4) (추가) FY는 있는데 Q3YTD가 없으면 FY - (Q1+Q2+Q3)로 Q4 복원
         """
+
         base = self.extract_tag_data(tag, taxonomy, unit)
         if base is None or base.empty:
             return None
 
+        # 1) 가장 좋은 경로: 기존 robust 빌더 (frame, YTD 차분, FY-Q3YTD 등)
         q = CompanyFactsParser.build_true_quarterly(base)
         if q is not None and not q.empty:
-            return q.rename(columns={'q': '__q'})  # 필요 시 다운스트림 호환
+            # 기대 컬럼: end, q, val (build_true_quarterly가 그렇게 만든다고 가정)
+            out = q.copy()
+            if "end" in out.columns:
+                out["end"] = pd.to_datetime(out["end"], errors="coerce")
+            return out.rename(columns={'q': '__q'})
 
-        # fallback: 기본 로직
-        return self.get_quarterly_data(tag, taxonomy, unit)
+        # 2) fallback: 기존 기본 분기 추출
+        q2 = self.get_quarterly_data(tag, taxonomy, unit)
+        if q2 is None or q2.empty:
+            return None
+
+        # ---- q2를 표준 형태(end, val)로 정리 ----
+        qdf = q2.copy()
+
+        # 케이스 A: end 컬럼이 있는 경우
+        if "end" in qdf.columns:
+            qdf["end"] = pd.to_datetime(qdf["end"], errors="coerce")
+        # 케이스 B: index가 날짜인 경우
+        else:
+            qdf = qdf.reset_index().rename(columns={qdf.index.name or "index": "end"})
+            qdf["end"] = pd.to_datetime(qdf["end"], errors="coerce")
+
+        # val 컬럼이 없고 value로 되어 있으면 통일
+        if "val" not in qdf.columns and "value" in qdf.columns:
+            qdf = qdf.rename(columns={"value": "val"})
+
+        if "val" not in qdf.columns:
+            # 최소한 숫자 컬럼이 뭔지 알 수 없으면 더 진행 불가
+            return q2
+
+        qdf = qdf.dropna(subset=["end"])
+
+        # ---- (추가) Q4 복원: FY - (Q1+Q2+Q3) ----
+        # FY 후보: fp='FY' 우선, 없으면 form=10-K 기반
+        b = base.copy()
+        for c in ["end", "filed"]:
+            if c in b.columns:
+                b[c] = pd.to_datetime(b[c], errors="coerce")
+
+        fy = pd.DataFrame()
+        if "fp" in b.columns:
+            fy = b[b["fp"].astype(str).str.upper() == "FY"].copy()
+
+        if fy.empty and "form" in b.columns:
+            fy = b[b["form"].astype(str).str.upper().isin(["10-K", "10-K/A"])].copy()
+
+        if fy.empty or "end" not in fy.columns:
+            # FY 자체가 없으면 복원 불가
+            return q2
+
+        # frame에 Q/YTD가 들어간 FY는 (누적/분기)일 수 있으니 제외(가능하면)
+        if "frame" in fy.columns:
+            fy = fy[~fy["frame"].astype(str).str.contains(r"Q|YTD", na=False)]
+
+        # FY end별 최신 filed 1개 선택
+        if "filed" in fy.columns and fy["filed"].notna().any():
+            fy = fy.sort_values(["end", "filed"], ascending=[True, False]).drop_duplicates(["end"], keep="first")
+        else:
+            fy = fy.drop_duplicates(["end"], keep="last")
+
+        # fiscal year key는 end의 연도(10/31 결산이면 2025년 FY end는 2025-10-31 → 2025)
+        fy["fy_key"] = fy["end"].dt.year
+        qdf["fy_key"] = qdf["end"].dt.year
+
+        # fiscal year end month는 FY end에서 가져옴(회사별로 다를 수 있으니 FY end별로 동적으로 계산)
+        def infer_qnum(end_dt: pd.Timestamp, fy_end_month: int) -> Optional[int]:
+            """해당 회사의 결산월(fy_end_month)을 기준으로 분기 번호(1~4) 추정"""
+            if pd.isna(end_dt):
+                return None
+            m = int(end_dt.month)
+            # 분기말 월들: Q1=(m-9), Q2=(m-6), Q3=(m-3), Q4=m (mod 12)
+            q_end_months = [
+                ((fy_end_month - 9 - 1) % 12) + 1,
+                ((fy_end_month - 6 - 1) % 12) + 1,
+                ((fy_end_month - 3 - 1) % 12) + 1,
+                fy_end_month,
+            ]
+            if m not in q_end_months:
+                return None
+            return q_end_months.index(m) + 1
+
+        # Q번호 추정 컬럼이 없으면 만들어줌(10/31 결산 기업의 1/31,4/30,7/31,10/31 매핑 가능)
+        if "__q" not in qdf.columns:
+            qdf["__q"] = pd.NA
+
+        # FY별로 Q4가 빠졌으면 복원
+        added_rows = []
+        for _, r in fy.iterrows():
+            fy_key = r.get("fy_key")
+            fy_end = r.get("end")
+            fy_val = r.get("val")
+            if pd.isna(fy_key) or pd.isna(fy_end) or pd.isna(fy_val):
+                continue
+
+            fy_end_month = int(fy_end.month)
+
+            sub = qdf[qdf["fy_key"] == fy_key].copy()
+            if sub.empty:
+                continue
+
+            # 이미 이 FY의 Q4(=fy_end)가 있으면 스킵
+            if (sub["end"] == fy_end).any():
+                continue
+
+            # Q번호 추정
+            sub["qnum"] = sub["end"].apply(lambda d: infer_qnum(d, fy_end_month))
+            q13 = sub[sub["qnum"].isin([1, 2, 3])].copy()
+
+            # Q1~Q3가 다 있어야 FY - sum(Q1~Q3)
+            if q13["qnum"].nunique() < 3:
+                continue
+
+            try:
+                qsum = q13.groupby("qnum")["val"].last().astype(float).sum()
+                q4_val = float(fy_val) - float(qsum)
+            except Exception:
+                continue
+
+            if pd.isna(q4_val):
+                continue
+
+            added_rows.append({
+                "end": fy_end,
+                "val": q4_val,
+                "fy_key": fy_key,
+                "__q": 4
+            })
+
+        if added_rows:
+            add_df = pd.DataFrame(added_rows)
+            qdf = pd.concat([qdf, add_df], ignore_index=True)
+
+        # 정리
+        qdf = qdf.sort_values("end").drop_duplicates(["end"], keep="last")
+        qdf = qdf[["end", "val", "__q"]].copy()
+        qdf = qdf.rename(columns={"end": "end"})  # 유지용
+
+        return qdf
 
     def get_annual_data_strict(
         self,
