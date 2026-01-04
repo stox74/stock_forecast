@@ -1355,7 +1355,7 @@ if __name__ == "__main__":
 
     if error_ticker_list:
         try:
-            pd.DataFrame(error_ticker_list).to_csv("valuation_error_list.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(error_ticker_list).to_csv("../valuation_error_list.csv", index=False, encoding="utf-8-sig")
             print(f"[INFO] 오류 리스트 저장: valuation_error_list.csv (총 {len(error_ticker_list)}개)")
         except Exception:
             print(f"[WARN] 오류 리스트 저장 실패 (총 {len(error_ticker_list)}개)")
