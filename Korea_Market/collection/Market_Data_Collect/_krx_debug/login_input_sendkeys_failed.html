@@ -1,0 +1,509 @@
+<html lang="ko" class="windows chrome chrome143 mordern-browser"><head>
+	<title>로그인 - KRX | KRX Data Marketplace</title>
+	<meta charset="utf-8">
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2, minimum-scale=1, user-scalable=yes">
+	<meta name="author" content="한국거래소">
+	<meta name="description" content="증권·파생상품의 시장정보(Marketdata), 공매도정보, 투자분석정보(SMILE) 등 한국거래소의 Data Marketplace를 통합하여 제공 서비스">
+	<meta name="keywords" content="KRX Data Marketplace 데이터시스템 한국거래소 통계 KRX통계 한국거래소정보 시장정보 주식 한국거래소데이터 KRX 한국거래소공매도 공매도 투자분석정보 증권투자정보포털 코스닥기술분석보고서 분석보고서">
+	<meta property="og:type" content="website">
+	<meta property="og:title" content="KRX KRX Data Marketplace">
+	<meta property="og:description" content="증권·파생상품의 시장정보(Marketdata), 공매도정보, 투자분석정보(SMILE) 등 한국거래소의 Data Marketplace를 통합하여 제공 서비스">
+	<meta name="naver-site-verification" content="222ad2f14a7a611c5494c898d311a8d7b61ba13e">
+	<meta name="robots" content="index,follow">
+	<link rel="stylesheet" type="text/css" href="/contents/MDC/COMS/client/view/css/client.css?v=20251226">
+	<script type="text/javascript" src="/inc/lib/jquery/jquery-1.12.4.min.js"></script>
+<link rel="stylesheet" type="text/css" href="/inc/lib/jquery/jquery-ui-1.12.1.custom.min.css">
+<script type="text/javascript" src="/inc/lib/jquery/jquery-ui-1.12.1.custom.min.js"></script>
+<script type="text/javascript" src="/inc/lib/scroll/jquery.slimscroll.min.js"></script>
+<script type="text/javascript" src="/inc/lib/scroll/slimScrollHorizontal.js?v=20220108_2"></script>
+<script type="text/javascript" src="/inc/lib/lodash/lodash-3.10.1.min.js"></script>
+
+      <script type="text/javascript">
+      	if (!Object.assign) Object.assign = _.assign;
+      </script>
+      
+<script type="text/javascript" src="/WEB-APP/webponent/ci/agent.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/ci/util.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/ci/ui.js"></script>
+<!-- getDevice not defined --><script type="text/javascript" src="/inc/js/mdc.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.lang.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.module.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.util.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.layer.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.validate.js?v=20260102_3 "></script>
+
+      <script type="text/javascript">
+      	/*
+				if (ci.agent.isMobile) {
+					if (location.pathname.indexOf('/contents/MDC/') > -1) location.href='/contents/MMC/MAIN/main/index.cmd';
+				} else {
+					if (location.pathname.indexOf('/contents/MMC/') > -1) location.href='/contents/MDC/MAIN/main/index.cmd';
+				}
+				*/
+      	mdc.lang.setLocale(document.querySelector('html').lang);
+				mdc.lang.setResources();
+
+				if (!location.origin) {
+					location.origin = location.protocol + '//' + location.hostname;
+					if (location.port) location.origin += ':' + location.port;
+				}
+      </script>
+      
+ 
+	<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/dialog/dialog.css">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/dialog/layerlink.css">
+<link rel="stylesheet" type="text/css" href="/templets/mdc/css/common.css?v=20260102_3 ">
+<link rel="stylesheet" type="text/css" href="/templets/mdc/css/datasale.css?v=20260102_3 ">
+<link rel="stylesheet" type="text/css" href="/templets/mdc/css/dev.css?v=20260102_3 ">
+<link rel="stylesheet" type="text/css" href="/inc/lib/calendar/css/pc/calendar.css?v=20260102_3 ">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/grid2.0/css/webponent.grid.css">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/grid2.0/css/webponent.grid.flat.css?v=20230707_5">
+<link rel="stylesheet" type="text/css" href="/templets/mdc/css/grid.css?v=20230707_5">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/grid2.0/css/webponent.pagingUI.css">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/grid2.0/css/webponent.Tree.css">
+<link rel="stylesheet" type="text/css" href="/inc/lib/ci-grid/css/ci-grid.css?v=20260102_3 ">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/chart2.0/lib/chart/webponent.chart.css">
+<link rel="stylesheet" type="text/css" href="/inc/lib/jstree/themes/default/style.css">
+<link rel="stylesheet" type="text/css" href="/inc/lib/jquery/jquery.uploadfile.css?v=20260102_3 ">
+<script type="text/javascript" src="/WEB-APP/webponent/dialog/dialog.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/dialog/layerlink.js"></script>
+<script type="text/javascript" src="/inc/lib/calendar/calendar.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/webponent.licenseKey.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/external/jquery.mousewheel.min.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/webponent.grid.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/external/webponent.pagingUI.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/webponent.grid.UIplugin.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/external/json2.min.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/external/lz-string.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/webponent.report.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/grid2.0/webponent.grid.AjaxTree.js"></script>
+<script type="text/javascript" src="/inc/lib/ci-grid/js/ci-grid-1.00.0.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/webponent.licenseKey.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/comm/raphael.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/comm/webponent.comm.common.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/comm/webponent.comm.export.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/chart/webponent.chart.js?v=20240628_1"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/chart/webponent.chart.style.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/chart/webponent.chart.option.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/chart/webponent.chart.series.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.horizon.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.korea.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.pie.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.scatterplot.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.treemap.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.radar.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.shaped.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.gauge.style.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/chart2.0/lib/visual/webponent.visual.angular.js?v=20230707_5"></script>
+<script type="text/javascript" src="/inc/lib/jstree/jstree.js"></script>
+<script type="text/javascript" src="/inc/lib/jquery/jquery.form.min.js"></script>
+<script type="text/javascript" src="/inc/lib/jquery/jquery.uploadfile.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/lib/atoh/atoh.js"></script>
+
+	<!--h:s--><!--h:e-->
+	
+</head>
+<body class="" style="overflow-y:auto;">
+<div id="wrap" class="login">
+	<!-- header -->
+	<div class="ms-header">
+		<div>
+			<img src="/templets/mdc/img/white_all.png?v=20251226" alt="헤더로고" class="jsMainTt" style="cursor: pointer">
+		</div>
+	</div>
+	<!-- header -->
+	<!-- CONTAINER -->
+	<!--b:s-->
+
+
+	
+		
+	
+	
+
+<iframe id="COMS001_FRAME" src="/contents/MDC/COMS/client/view/login.jsp?site=mdc" width="100%" scrolling="no" style="height: 1123px;" cd_frame_id_="5d0951916d8ee10ef8962116feae9172"></iframe>
+<form name="COMS001_FORM" method="post" onsubmit="return false;">
+  <input type="hidden" name="redirectURL" value="">
+</form>
+<script type="text/javascript">
+  (function () {
+    var f = document.COMS001_FORM;
+    window.addEventListener('message', function (e) {
+      // if (e.origin === 'http://localhost:8080') {
+        document.getElementById('COMS001_FRAME').contentWindow.postMessage({
+          id: 'mdc',
+          origin: location.origin,
+          context: '',
+          protocol: location.protocol,
+          host: location.host,
+          hostname: location.hostname,
+          port: location.port,
+          redirect: f.redirectURL.value
+        }, '*');
+      // }
+    });
+  }());
+
+</script>
+
+<!--b:e-->
+	<!-- //CONTAINER -->
+	<!-- footer -->
+	<div class="ms-footer">
+		<div>
+			<span>데이터 판매 / OPENAPI 관련 문의 데이터사업부 :  02-3774-8904 </span>
+		</div>
+	</div>
+	<!-- footer -->
+</div>
+
+<form id="TEMPLET_FORM" name="TEMPLET_FORM" method="post" onsubmit="return false;"></form>
+
+<script src="/templets/mdc/js/common.js?v=20231027_1"></script>
+<script type="text/javascript">
+
+	$('.jsMainTt').on('click', function () {
+		window.top.location.href = '/';
+	});
+
+
+	function gotoMenu(url, menu_id, popupYn, popupAttr) {
+		var isLogin = false;
+
+		if (!isLogin && menu_id.indexOf("MDC01") == -1) {
+			alert('로그인 또는 회원가입이 필요합니다. ');
+		}
+
+		if(popupYn === 'Y') {
+			var popupOpt = popupAttr + " resizable=yes";
+			window.open(url, menu_id, popupOpt);
+
+		} else {
+
+			if(menu_id == 'MDC04' || menu_id == 'MDC0403') {
+				window.open(url, '_blank');
+			} else {
+				location.href = url;
+			}
+		}
+	}
+
+	mdc.module.setModule({
+		name: 'TEMPLET_MODULE',
+		init: 'init',
+		function: function (self, api) {
+
+			var SESSION_TIMEOUT = 30;
+
+			self.init = function () {
+				if ("en" == "") {
+					mdc.util.setCookie("lang", "en", 365);
+				} else if ("ko_KR" == "") {
+					mdc.util.setCookie("lang", "ko_KR", 365);
+				}
+				if ($('#jsLogoutBtn').length > 0) {
+					timeoutForLogout();
+				}
+			};
+
+			var makeDigitNumber = function (number) {
+				var digitNumber = number + '';
+				if (number < 10) {
+					digitNumber = '0' + number;
+				}
+				return digitNumber;
+			};
+
+			var confirmForLogout = function () {
+				api.util.submitAjax({
+					url: '/contents/MDC/MAIN/main/removeSession.cmd',
+					success: function () {
+						api.layer.confirm('세션 만료로 자동 로그아웃 되었습니다.<br><span style="font-weight:600;">서비스 이용을 위해 재로그인 해주세요.</span>', function () {
+							location.href = '/contents/MDC/COMS/client/MDCCOMS001.cmd';
+						}, function () {
+							location.href = '/contents/MDC/MAIN/main/index.cmd';
+						});
+					}
+				});
+			};
+
+			var timeoutForLogout = function () {
+				if (self.timeoutForLogout) {
+					clearInterval(self.timeoutForLogout);
+				}
+				var date = new Date();
+				date.setMinutes(date.getMinutes() + SESSION_TIMEOUT);
+				document.cookie = 'mdc.client_session=' + encodeURIComponent('true') + '; path=/; expires=' + date.toUTCString() + ';';
+				var minute = SESSION_TIMEOUT;
+				var second = 0;
+				self.timeoutForLogout = setInterval(function () {
+					second -= 1;
+					if (second < 0) {
+						minute -= 1;
+						second = 59;
+					}
+					if (minute < 0 || api.util.getCookie('mdc.client_session') !== 'true') {
+						minute = 0;
+						second = 0;
+						confirmForLogout();
+						clearInterval(self.timeoutForLogout);
+					}
+					$('#jsLogoutTime').text(makeDigitNumber(minute) + '분 ' + makeDigitNumber(second) + '초');
+				}, 1000);
+			};
+
+			$('#jsExtendLoginBtn').on('click', function () {
+				api.util.submitAjax({
+					url: '/contents/MDC/MAIN/main/extendSession.cmd',
+					success: function (data) {
+						if (api.util.isErrorCode(data)) {
+							confirmForLogout();
+						} else {
+							$('#jsLogoutTime').text(SESSION_TIMEOUT + '분 00초');
+							timeoutForLogout();
+						}
+					}
+				});
+			});
+
+			//=== GNB 메뉴... START
+			// 통계메뉴에 있을 때는 대메뉴로 메뉴 이동시 화면이 새로고침 되면 안되고
+			// 좌측 메뉴 트리만 바뀌어야 한다.
+			var href = location.href;
+			var isMdi = href.indexOf('mdiLoader') > -1 ? true : false;
+			var $mnlnb2Depth = $('.CI-MDI-MENU-ALWAYS-ACTIVE','#jsMdiMenu');
+			$('.jsMenuLink', '#jsGnbArea').click(function () {
+
+				// 현재 통계 MDI 화면임
+				if ( isMdi ) {
+					//= 대메뉴 닫기
+					$('#jsGnbArea > div').slideUp();
+					//=/
+
+					//= 트리메뉴 변경
+					var $this = $(this);
+					var menuIdSel = $this.attr('data-depth-menu-id');
+
+					// 대메뉴 1 Depth 판별(length==5) 후 2 Depth 변환 (어설프지만 넘어가자;;;)
+					if ( menuIdSel.length === 5 ) {
+						menuIdSel = menuIdSel + '01';
+					}
+
+					$mnlnb2Depth.each(function () {
+						$this = $(this);
+						if ( menuIdSel ===  $this.attr('data-depth-menu-id')) { $this.css('display', ''); }
+						else { $this.css('display', 'none');}
+					});
+					//=/
+
+					return false;
+				}
+
+				return true;
+			});
+			//===/ GNB 메뉴... End
+
+			//==== 전체메뉴: S
+			// 1depth 메뉴 클릭
+			$('.allmenu .allmenu_left a').on('click', function () {
+				var $li = $(this).closest('li');
+				$li.addClass('on').siblings().removeClass('on');
+				$('.allmenu .group_wrap').hide().eq($li.index()).show();
+			});
+
+			// 2depth 메뉴 클릭
+			$('.allmenu .group1 > a').on('click', function () {
+				var $this = $(this);
+
+				// 새 윈도우 링크이면 a 태그 기본 기능으로 처리
+				if ($this.attr('target') === '_blank') {
+					return;
+				}
+
+				var $group1 = $this.parent('div.group1');
+				var $group2 = $group1.next();
+				if ($group1.length === 0) return;
+
+				var $span = $this.find('span:not(.menu-name):not(.arrow):not(.nodepth)');
+				if ($span.length === 0) return;
+				if ($span.hasClass('open')) { // 열려있는 상태
+					$span.attr({
+						class: 'close',
+						title: '메뉴 닫기'
+					}).text('메뉴 닫기');
+
+					$group2.find('a').addClass('on');
+					$group2.find('ul').show();
+
+					//$this.parent('.group1').next('.group2').hide();
+
+				} else { // 닫혀있는 상태
+					$span.attr({
+						class: 'open',
+						title: '메뉴 펼치기'
+					}).text('메뉴 펼치기');
+
+					$group2.find('a').removeClass('on');
+					$group2.find('> ul').find('ul').hide();
+
+					//$this.parent('.group1').next('.group2').show();
+				}
+			});
+
+			// 3depth 이하 메뉴 클릭
+			$('.allmenu .group2 a').on('click', function () {
+				var $this = $(this);
+				if ($this.hasClass('nodepth')) {
+
+				} else {
+					$this.toggleClass('on');
+					$this.siblings('ul').toggle();
+				}
+			});
+
+			// 전체메뉴 검색 파라미터
+			var menusSearchedForAllMenu = {
+				word: '',
+				seq: 0,
+				$menus: []
+			};
+
+			// 전체메뉴 검색 파라미터 초기화
+			var resetMenusSearchedForAllMenu = function () {
+				menusSearchedForAllMenu.word = '';
+				menusSearchedForAllMenu.seq = 0;
+				menusSearchedForAllMenu.$menus.forEach(function ($menu) {
+					$menu.html($menu.attr('data-menu-name'));
+				});
+				menusSearchedForAllMenu.$menus = [];
+			};
+
+			// 전체메뉴 검색 수행
+			var focusMenuSearchedForAllMenu = function () {
+				if (menusSearchedForAllMenu.$menus.length === 0) return;
+
+				var $menu = menusSearchedForAllMenu.$menus[menusSearchedForAllMenu.seq];
+				var $prevMenu;
+				if (menusSearchedForAllMenu.seq === 0) {
+					$prevMenu = menusSearchedForAllMenu.$menus[menusSearchedForAllMenu.$menus.length - 1];
+				} else {
+					$prevMenu = menusSearchedForAllMenu.$menus[menusSearchedForAllMenu.seq - 1];
+				}
+
+				// 검색 대상 배경색상변경
+				$prevMenu.find('em').removeClass('focus');
+				$menu.find('em').addClass('focus');
+
+				// 상위 메뉴 열기
+				$menu.parentsUntil('.group2', 'ul').each(function (index, ul) {
+					$(ul).show().siblings('a').addClass('on');
+				});
+				$('.allmenu .allmenu_left li').eq($menu.closest('.group_wrap').index()).find('a').click();
+
+				// 검색 대상 포커스
+				$menu[0].scrollIntoView(false);
+
+				menusSearchedForAllMenu.seq += 1;
+				if (menusSearchedForAllMenu.seq >= menusSearchedForAllMenu.$menus.length) {
+					menusSearchedForAllMenu.seq = 0;
+				}
+			};
+
+			// 전체메뉴 검색
+			$('#CI-ALL-MENU-SEARCH').on('click', function () {
+				var word = $('#CI-ALL-MENU-SEARCH-VALUE').val().trim();
+				if (word) {
+					if (word === menusSearchedForAllMenu.word) {
+						focusMenuSearchedForAllMenu();
+					} else {
+						resetMenusSearchedForAllMenu();
+						menusSearchedForAllMenu.word = word;
+						// 숫자 - 화면번호 (중간어 일치 제외)
+						// 문자 - 화면명 (중간어 일치 포함)
+						var pattern = isNaN(word) ? word : '^' + word;
+						var regexp = new RegExp(pattern, 'g');
+						var $menus = $('#CI-ALL-MENU-GROUP').find('[class="menu-name"]');
+						$menus.each(function (index, menu) {
+							var $menu = $(menu);
+							var name = $menu.attr('data-menu-name');
+							var screenNo = $menu.attr('data-screen-no');
+
+							if (regexp.test(name) ) {
+								$menu.html(name.replace(regexp, '<em>' + word + '</em>'));
+								menusSearchedForAllMenu.$menus.push($menu);
+							}
+							// 화면번호 검색은 화면명 전체 강조 표시
+							else if (regexp.test(screenNo)) {
+								$menu.html('<em>' + name + '</em>');
+								menusSearchedForAllMenu.$menus.push($menu);
+							}
+						});
+						focusMenuSearchedForAllMenu();
+					}
+				} else {
+					resetMenusSearchedForAllMenu();
+				}
+			});
+
+			// 전체메뉴 검색 엔터 이벤트
+			$('#CI-ALL-MENU-SEARCH-VALUE').on('keyup', function (e) {
+				if (e.keyCode === 13) $('#CI-ALL-MENU-SEARCH').click();
+			});
+
+			// 전체메뉴 확대/축소
+			$('.allmenu .allmenu_btn.wide').on('click', function () {
+				$(this).toggleClass('on');
+				$('.allmenu').toggleClass('wide');
+			});
+
+			// 전체메뉴 닫기
+			$('.allmenu .allmenu_btn.close').on('click', function () {
+				$('#CI-ALL-MENU-LAYER').hide();
+			});
+
+			// 전체메뉴 열기
+			$('.CI-ALL-MENU-LAYER-OPEN').on('click', function () {
+				$('#CI-ALL-MENU-LAYER').show();
+				$('#CI-ALL-MENU-SEARCH-VALUE').focus();
+			});
+
+			// 전체목록 다운로드
+			$('body').on('click', '.CI-ALL-MENU-DOWNLOAD', function () {
+				var type = $(this).attr('data-type');
+				var f = document.TEMPLET_FORM;
+				f.action = '/contents/MDC/MAIN/main/downloadMenu.cmd?type=' + type;
+				f.submit();
+			});
+			// 전체메뉴: E
+
+		}
+	});
+
+
+	function resizeAllIframes() {
+		var iframes = document.getElementsByTagName('iframe');
+
+		for (var i = 0; i < iframes.length; i++) {
+			var iframe = iframes[i];
+
+			// iframe 로드가 안된 상태면 넘어감
+			if (!iframe.contentWindow || !iframe.contentWindow.document) continue;
+
+			try {
+				var innerDoc = iframe.contentDocument || iframe.contentWindow.document;
+				iframe.style.height = (innerDoc.body.scrollHeight) + "px";
+			} catch (e) {
+				// 외부 도메인은 보안 때문에 예외(무시)
+			}
+		}
+	}
+
+	// 모든 iframe load 시마다 자동 호출
+	window.addEventListener("load", resizeAllIframes);
+
+</script>
+
+
+</body></html>

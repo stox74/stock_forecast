@@ -24,7 +24,7 @@ def add_repo_path():
 
 # 경로 추가 실행
 project_root = add_repo_path()
-
+import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from pandas.tseries.offsets import BDay
@@ -36,6 +36,9 @@ from DATA.stock_invest_function import get_db_host  # 사용자 정의 함수
 from sqlalchemy.types import String, Float, Date
 import pymysql
 import FinanceDataReader as fdr
+from io import BytesIO
+from dateutil.relativedelta import relativedelta
+
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -60,21 +63,108 @@ def get_db_engine():
 # ==============================
 # 시가총액 데이터 수집 함수
 # ==============================
-def get_cap(base_day):
-    date = str(base_day.year) + str(base_day.month).zfill(2) + str(base_day.day).zfill(2)
-    limit_num = 1
-    while limit_num < 10:
-        market_info = stock.get_market_cap(date)
-        if market_info['시가총액'].sum() != 0:
-            break
-        else:
-            prev_date = base_day + relativedelta(days=-limit_num)
-            date = str(prev_date.year) + str(prev_date.month).zfill(2) + str(prev_date.day).zfill(2)
-            limit_num += 1
 
-    market_info.reset_index(inplace=True)
-    market_info.rename(columns={'단축코드': '종목코드', '상장주식수': 'Stocks'}, inplace=True)
-    return market_info
+KRX_OTP_URL = "https://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd"
+KRX_DN_URL  = "https://data.krx.co.kr/comm/fileDn/download_csv/download.cmd"
+
+# 전종목시세 화면 (주식 > 종목시세 > 전종목 시세)
+KRX_REF = "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020101"
+
+def _looks_like_valid_otp(s: str) -> bool:
+    # 정상 OTP는 보통 길고 랜덤한 문자열입니다.
+    # len=6 같은 건 거의 에러/플래그로 봅니다.
+    s = (s or "").strip()
+    if len(s) < 12:
+        return False
+    # 가끔 'false' 등 문자도 오므로 숫자/문자 상관없이 길이로 1차 판별
+    return True
+
+def get_cap(base_day, debug=True):
+    sess = requests.Session()
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": KRX_REF,
+        "Origin": "https://data.krx.co.kr",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Accept": "*/*",
+    })
+
+    # ✅ 0) 먼저 화면을 한번 밟아서 세션/쿠키를 확보 (이게 핵심인 경우가 많음)
+    try:
+        g = sess.get(KRX_REF, timeout=30)
+        if debug:
+            print(f"[DEBUG] warmup GET {g.status_code}, cookies={len(sess.cookies)}")
+    except Exception as e:
+        if debug:
+            print("[DEBUG] warmup GET failed:", e)
+
+    limit_num = 0
+    while limit_num < 10:
+        day = base_day + relativedelta(days=-limit_num)
+        ymd = day.strftime("%Y%m%d")
+
+        # ✅ 1) OTP 생성
+        payload = {
+            "mktId": "ALL",
+            "trdDd": ymd,
+            "share": "1",
+            "money": "1",
+            "csvxls_isNo": "false",
+            "name": "fileDown",
+
+            # ✅ pagePath 넣어주는 게 필요한 케이스가 있음
+            "pagePath": "/contents/MDC/MDI/mdiLoader",
+
+            # ✅ 전종목시세(주식) endpoint
+            # (KRX 개편에 따라 바뀔 수 있어, 안 되면 네트워크탭에서 url/bld를 정확히 복사해야 함)
+            "url": "dbms/MDC/STAT/standard/MDCSTAT01501",
+        }
+
+        r = sess.post(KRX_OTP_URL, data=payload, timeout=30)
+        otp = (r.text or "").strip()
+
+        if debug:
+            print(f"[DEBUG] {ymd} OTP status={r.status_code}, otp='{otp}', len={len(otp)}")
+
+        if r.status_code != 200 or not _looks_like_valid_otp(otp):
+            # OTP가 짧으면 거의 확실히 실패. 다음날로 롤백
+            limit_num += 1
+            continue
+
+        # ✅ 2) 다운로드
+        r2 = sess.post(KRX_DN_URL, data={"code": otp}, timeout=30)
+
+        if debug:
+            cd = r2.headers.get("Content-Disposition")
+            ct = r2.headers.get("Content-Type")
+            print(f"[DEBUG] {ymd} download status={r2.status_code}, bytes={len(r2.content)}, CT={ct}, CD={cd}")
+
+        if r2.status_code != 200 or len(r2.content) < 500:
+            # 빈 응답/에러 응답이면 실패 처리
+            limit_num += 1
+            continue
+
+        # ✅ 3) CSV 파싱
+        try:
+            df = pd.read_csv(BytesIO(r2.content), encoding="euc-kr")
+        except Exception:
+            df = pd.read_csv(BytesIO(r2.content), encoding="utf-8")
+
+        if df.shape[1] < 5:
+            limit_num += 1
+            continue
+
+        # 컬럼 정리(후속 로직과 호환)
+        if "종목코드" not in df.columns and "단축코드" in df.columns:
+            df = df.rename(columns={"단축코드": "종목코드"})
+        if "상장주식수" in df.columns and "Stocks" not in df.columns:
+            df = df.rename(columns={"상장주식수": "Stocks"})
+
+        return df
+
+    raise ValueError(f"❌ {base_day.date()} 기준 10일 이내에서 전종목 시총 데이터를 못 받았습니다.")
+
 
 
 # ==============================
@@ -96,12 +186,27 @@ def collect_marketcap(start_date: str, end_date: str) -> pd.DataFrame:
 # 데이터 전처리 및 long format 변환
 # ==============================
 def transform_to_long_format(df: pd.DataFrame) -> pd.DataFrame:
-    df.rename(columns={'티커': 'ticker', 'Stocks': '유통주식수'}, inplace=True)
-    df['ticker'] = 'A' + df['ticker'].astype(str)
+    # ✅ KRX 전종목 시세는 보통 '종목코드'를 씁니다
+    if "티커" in df.columns:
+        df = df.rename(columns={"티커": "ticker"})
+    elif "종목코드" in df.columns:
+        df = df.rename(columns={"종목코드": "ticker"})
+    elif "단축코드" in df.columns:
+        df = df.rename(columns={"단축코드": "ticker"})
+    else:
+        raise KeyError(f"ticker 컬럼을 찾을 수 없습니다. columns={df.columns.tolist()}")
+
+    if "Stocks" in df.columns:
+        df = df.rename(columns={"Stocks": "유통주식수"})
+    elif "상장주식수" in df.columns:
+        df = df.rename(columns={"상장주식수": "유통주식수"})
+
+    df["ticker"] = "A" + df["ticker"].astype(str).str.zfill(6)
+
     long_df = df.melt(
-        id_vars=['date', 'ticker'],
-        var_name='indicator',
-        value_name='value'
+        id_vars=["date", "ticker"],
+        var_name="indicator",
+        value_name="value"
     )
     return long_df
 

@@ -1,0 +1,533 @@
+<html class="windows chrome chrome143 mordern-browser"><head>
+<link rel="stylesheet" type="text/css" href="/contents/MDC/COMS/client/view/css/client.css?v=20251226_1">
+<style>
+body {
+	background-color: #ffffff;
+}
+
+.ci-dialog .ui-button.btn-confirm {
+	font-family: "Nanum Gothic", sans-serif;
+}
+
+.ci-dialog .ui-dialog-titlebar {
+	width: 100% !important;
+	width: auto;
+	height: 43px;
+}
+
+.ci-dialog .ui-dialog-title {
+	font-family: "Nanum Gothic", sans-serif;
+	color: #ffffff;
+	font-size: 16px;
+}
+
+:lang(en) .ci-dialog .ui-dialog-titlebar {
+	font-family: 'Open Sans', sans-serif;
+}
+</style>
+<script type="text/javascript" src="/inc/lib/jquery/jquery-1.12.4.min.js"></script>
+<link rel="stylesheet" type="text/css" href="/inc/lib/jquery/jquery-ui-1.12.1.custom.min.css">
+<script type="text/javascript" src="/inc/lib/jquery/jquery-ui-1.12.1.custom.min.js"></script>
+<script type="text/javascript" src="/inc/lib/scroll/jquery.slimscroll.min.js"></script>
+<script type="text/javascript" src="/inc/lib/scroll/slimScrollHorizontal.js?v=20220108_2"></script>
+<script type="text/javascript" src="/inc/lib/lodash/lodash-3.10.1.min.js"></script>
+
+      <script type="text/javascript">
+      	if (!Object.assign) Object.assign = _.assign;
+      </script>
+      
+<script type="text/javascript" src="/WEB-APP/webponent/ci/agent.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/ci/util.js"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/ci/ui.js"></script>
+<!-- getDevice not defined --><script type="text/javascript" src="/inc/js/mdc.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.lang.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.module.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.util.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.layer.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/inc/js/mdc.validate.js?v=20260102_3 "></script>
+
+      <script type="text/javascript">
+      	/*
+				if (ci.agent.isMobile) {
+					if (location.pathname.indexOf('/contents/MDC/') > -1) location.href='/contents/MMC/MAIN/main/index.cmd';
+				} else {
+					if (location.pathname.indexOf('/contents/MMC/') > -1) location.href='/contents/MDC/MAIN/main/index.cmd';
+				}
+				*/
+      	mdc.lang.setLocale(document.querySelector('html').lang);
+				mdc.lang.setResources();
+
+				if (!location.origin) {
+					location.origin = location.protocol + '//' + location.hostname;
+					if (location.port) location.origin += ':' + location.port;
+				}
+      </script>
+      
+
+<script type="text/javascript" src="/WEB-APP/webponent/dialog/dialog.js?v=20230707_5"></script>
+<script type="text/javascript" src="/WEB-APP/webponent/dialog/layerlink.js"></script>
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/dialog/dialog.css">
+<link rel="stylesheet" type="text/css" href="/WEB-APP/webponent/dialog/layerlink.css">
+
+<script type="text/javascript" src="/inc/lib/base64.js"></script>
+
+<script type="text/javascript" src="/pluginfree/js/nppfs.query-1.11.3.js?v=20260102_3 "></script>
+<script type="text/javascript" src="/pluginfree/js/nppfs-1.13.0.js?v=20260102_3 "></script>
+
+
+<script type="text/javascript">
+    jQuery(document).ready(function(){
+      /*
+      npPfsStartup(document.form1, false, true, true, "npkencrypt", "on");
+      1. form 양식 : 기본값 DOM Document 상의 첫번째 form
+      2. 개인방화벽 사용여부 : 기본값 false
+      3. 키보드보안 사용여부 : 기본값 false
+      4. 단말정보수집 사용여부 : 기본값 false
+      5. 가상키패드 사용여부 : 기본값 false
+      6. 키보드보안 E2E 필드 설정 속성명 : 기본값 "enc"
+      7. 키보드보안 E2E 필드 설정 속성값: 기본값 "on"
+      부가적인 설정은(예, 설치확인 등) /pluginfree/js/nppfs-1.0.0.js를 수정하여 설정하십시오.
+      //키보드 보안 포커스 아웃. (로그인 이후 키보드 입력이 않되는 경우 해당 스크립트 화면 전환전에 수행)
+       bh.doFocusOut();
+    */
+
+      npPfsStartup(document.LOGIN_FORM, true, true, false, false, "npkencrypt", "on");
+    });
+
+  </script>
+</head>
+
+
+<body><div id="nppfs-loading-modal" style="display: none; position: fixed; z-index: 10000; top: 0px; left: 0px; height: 0px; width: 0px; background: url(&quot;data:image/gif;base64,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&quot;) 50% 50% no-repeat rgb(255, 255, 255); opacity: 0.7;"></div><input type="hidden" name="isUseRuleOk">
+<input type="hidden" name="mbrNo">
+<!-- container -->
+<div class="ms-content">
+	<h2>로그인</h2>
+	<form name="LOGIN_FORM" id="LOGIN_FORM" method="post" onsubmit="return false;" target="_top" data-nppfs-form-id="d2e502f29d25b5d2d"><div class="nppfs-elements" style="display:none;"><input type="hidden" name="__E2E_RESULT__" value="749488a5eb72725693d7f07a5df94906a309932abca86bcc43617db981a3ec3be5b6f61c8615c8f8be286453e00c3861a7de1745014b2761d47e490e7ce7d75c63149bff66d89559abe834453489691fdaca17605351bc873e97e0e55bf5fec0867d01e12b60c1f5247553c1311a6faf6035771548440e773f2d7612b65c19f0778d5a63c1cf6ad6d48de1f5eb624cd09872973fab8c415fab618446e09eae859e3ec4e6293e2f66cae22e403014f7ae704826538f2930107ffe8c877e8bf5e06cbc8a3865d72f278b8f01e85c3d0390647ca72131d0c96b8e57893d931fe1aae532abad409ffd5d1e746663c9f78c8fd75659e5d05619b7fdb677d7e7fb63b3">
+<input type="hidden" name="__E2E_UNIQUE__" value="176768768345676"><input type="hidden" name="pw__E2E__" value=""></div>
+		<input type="hidden" name="mbrNm"> 
+		<input type="hidden" name="telNo"> 
+		<input type="hidden" name="di"> 
+		<input type="hidden" name="certType"> <span class="ms-input_title">아이디</span>
+		<div class="ms-input_box ms-mb-32">
+			<label> 
+			    <input type="text" name="mbrId" id="mbrId" title="아이디" data-validate-rule="require" placeholder="아이디를 입력해주세요." maxlength="20"> <span class="resetBtn"></span>
+			</label>
+		</div>
+
+		<span class="ms-input_title">비밀번호</span>
+		<div class="ms-input_box">
+			<label> 
+			    <input type="password" name="pw" title="비밀번호" autocomplete="off" npkencrypt="on" data-validate-rule="require" maxlength="16" placeholder="비밀번호(영문,숫자,특수문자 포함 8~20자)" autocorrect="off" spellcheck="false" autocapitalize="off" class="nppfs-npk" style="color: rgb(255, 0, 0); background-color: rgb(169, 208, 245);"> <span class="resetBtn"></span>
+			</label>
+		</div>
+
+		<div class="id_saved">
+			<input type="checkbox" id="id_saved_btn" class="ms-check"> 
+			<label for="id_saved_btn" class="ms-label">아이디 저장하기</label>
+		</div>
+
+		<a class="ms-default-btn jsLoginBtn" href="javascript:void(0);">로그인</a>
+	</form>
+
+	<div class="ms-id_pwd_findBox">
+		<a href="javascript:void(0);" class="jsFindIdBtn">아이디 찾기</a> 
+		<a href="javascript:void(0);" class="jsResetPwBtn">비밀번호 초기화</a> 
+		<a href="javascript:void(0);" class="jsJoinBtn">회원가입</a>
+	</div>
+	<div class="ms-infoBox-login">
+		<span class="ms-inform">SNS 계정으로 가입하신 경우, 아이디/비밀번호 로그인을 이용하시려면<br>
+		'마이페이지 &gt; 정보수정'에서 비밀번호를 신규 설정해 주세요.</span>
+	</div>
+
+	<div class="ms-emojiBox">
+		<span class="ms-emojiBox-backgroundImg"></span> <span>이제 간편하게
+			로그인해 보세요!</span>
+	</div>
+
+	<div class="ms-socialLogin">
+		<a class="ms-default-btn ms-naver ms-mb-12 jsSnsMember" href="javascript:void(0);"><img src="/templets/mdc/img/naver.png?v=20251226_1" alt="네이버"><span>네이버로 로그인하기</span></a> 
+		<a class="ms-default-btn ms-kakao jsSnsMember" href="javascript:void(0);"><img src="/templets/mdc/img/kakao.png?v=20251226_1" alt="카카오"><span>카카오로 로그인하기</span></a>
+	</div>
+</div>
+<!-- container -->
+
+<div class="ms-notice on">
+	<button class="ms-accordion-btn">기존 개인회원 안내</button>
+	<hr class="ms-hr">
+	<div class="ms-accordion-content">
+		<ul>
+			<li>기존 개인회원의 경우, 아이핀인증 또는 휴대폰인증을 통해 아이디를 생성하셔야 홈페이지 이용이 가능합니다.</li>
+		</ul>
+		<div>
+			<a href="javascript:void(0);" class="jsLoginIpin">아이핀 인증</a> 
+			<a href="javascript:void(0);" class="jsLoginHp">휴대폰 인증</a>
+		</div>
+	</div>
+</div>
+
+<div id="previousMemberPopup" class="ci-dialog-content" style="display: none;">
+	<ul class="client_text">KRX Data Marketplace 홈페이지 회원체계 변경에 따라,<br>약관 동의 여부 확인 및 추가 정보 입력 절차가 필요합니다.</ul>
+	<div class="client_buttonBox">
+		<input type="checkbox" name="isUseRuleOk3_Y" value="Y" id="isUseRuleOk3_Y" class="checkbox VAL_Y isUseRuleOk3"><label for="isUseRuleOk3_Y" class="mypageMargin-left">마케팅 정보 수집 및 이용에 동의합니다.</label> 
+		<input type="checkbox" name="isUseRuleOk3_N" value="N" id="isUseRuleOk3_N" class="checkbox VAL_N isUseRuleOk3"><label style="margin-left: 10px" for="isUseRuleOk3_N">마케팅 정보 수집 및 이용에 동의하지 않습니다.</label>
+	</div>
+
+	<div style="text-align: center; padding: 15px 0 20px; border-top: 1px solid #ccc;">
+		<a href="javascript:void(0);" class="client_popupBtn" id="agreeComplete">확인</a>
+	</div>
+</div>
+
+
+<script type="text/javascript">
+  mdc.module.setModule({
+    name: 'LOGIN_MODULE',
+    init: 'init',
+    function: function (self, api) {
+      var f = document.LOGIN_FORM;
+      var $f = $(f);
+      var topLocation = {};
+      //mdc, opp 구분 값 설정
+      var site = "mdc";
+
+      self.init = function () {
+        window.addEventListener('message', function (e) {
+          topLocation = e.data;
+        });
+
+        window.top.postMessage('location', '*');
+        
+        if('' === '1') {
+        	mdc.layer.alert("입력하신 소셜 계정으로 연결된 정보가 없습니다.<br>아직 회원이 아니시거나, <br>기존 계정과의 연결이 필요합니다.<br><br>기존 회원은 '마이페이지 > 회원정보 수정'에서 <br>소셜 계정을 연결할 수 있습니다.");
+        }
+      };
+
+      self.getDomainName = function () {
+        return topLocation['origin'] + topLocation['context'] || '';
+      };
+
+      
+      self.redirectPage = function(){
+        bh.doFocusOut();
+        setTimeout(function(){window.parent.location.href = self.getRedirectUrl();},1000);
+      };
+
+      self.getRedirectUrl = function() {
+        var url = topLocation['origin'] || '';
+        var redirect = topLocation['redirect'] || '';
+        if (redirect) {
+          url += redirect;
+        } else {
+          url = self.getDomainName();
+        }
+        return url;
+      };
+
+      $('[name=pw]').on('keyup', function (data) {
+        if (data.keyCode === 13) {
+          $('.jsLoginBtn').trigger('click');
+          bh.doFocusOut();
+        }
+      });
+
+      // 아이핀 인증
+      $('.jsLoginIpin').on('click', function () {
+          window.open('/comm/certify/IPinCertification3.jsp?mId=LOGIN_MODULE', 'authPopup', 'width=430,height=590, scrollbar=yes');
+          bh.doFocusOut();
+      });
+
+      // 휴대폰 인증
+      $('.jsLoginHp').on('click', function () {
+          window.open('/comm/certify/CellularCertification3.jsp?mId=LOGIN_MODULE', 'authPopup', 'width=430,height=590, scrollbar=yes');
+          bh.doFocusOut();
+      });
+
+      self.addAuthDone = function(certType, telNo, name, di){
+            $('[name=telNo]').val(telNo);
+            $('[name=mbrNm]').val(name);
+            $('[name=di]').val(di);
+            $('[name=certType]').val(certType);
+
+            api.util.submitAjax({
+                url: '/contents/MDC/COMS/client/isDupMbrIpin.cmd',
+                data: {
+                  di: di,
+                  phoneNum: telNo
+                },
+                success: function (data) {
+                  if (!data['isDupMbrIpin']) {
+                    $f.attr('method','post');
+                    
+                    if (site === 'opp') {
+                        $f.attr('action', self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS002_S1.cmd?type=P')[0].submit();
+                    } else {
+                        $f.attr('action','/contents/MDC/COMS/client/MDCCOMS002_S1.cmd?type=P')[0].submit();
+                    }
+                  } else {
+                    
+                    mdc.layer.alert("해당 정보로 이미 가입된 계정이 있습니다.<br/>로그인 후 서비스를 이용해 주세요.");
+                  }
+                }
+              });
+      };
+
+      $('.jsMainTt').on('click', function () {
+        window.top.location.href = self.getDomainName() + '/';
+      });
+
+      //개편일 전 로그인한 법인에 대해 동의여부 layer popup을 호출해서 동의항목 페이지로 이동
+      $('.isUseRuleOk3').on('click', function () {
+        const cls = $(this).attr('class');
+
+        ['Y', 'N'].forEach(keyword => {
+          if(cls.indexOf(keyword) !== -1) {
+            if(keyword === 'Y') {
+              $('input[name="isUseRuleOk3_Y"]').prop('checked', true);
+              $('input[name="isUseRuleOk3_N"]').prop('checked', false);
+            } else {
+              $('input[name="isUseRuleOk3_Y"]').prop('checked', false);
+              $('input[name="isUseRuleOk3_N"]').prop('checked', true);
+            }
+          }
+        });
+      });
+      
+
+      $(document).on('click', '#agreeComplete', function () {
+        if(!$('#isUseRuleOk3_Y').is(':checked') && !$('#isUseRuleOk3_N').is(':checked')){
+ 
+          
+          api.layer.alert("마케팅 정보 수집 및 이용 동의 여부값을 선택해 주세요", function(){
+            setTimeout(function () {  $('#isUseRuleOk2_Y').focus();  },500);
+          });
+          return;
+        }
+
+        api.layer.closeModal();
+        
+        if($('#isUseRuleOk3_N').is(':checked')) {
+        	self.redirectPage();
+            if (site === 'opp') {
+                window.top.location.href = self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS002_S1.cmd?type=C&isPreviousMember=N';
+            } else {
+                window.top.location.href = '/contents/MDC/COMS/client/MDCCOMS002_S1.cmd?type=C&isPreviousMember=N';
+            }
+        } else {
+            self.redirectPage();
+            if (site === 'opp') {
+                window.top.location.href = self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS002_S1.cmd?type=C&isPreviousMember=Y';
+            } else {
+                window.top.location.href = '/contents/MDC/COMS/client/MDCCOMS002_S1.cmd?type=C&isPreviousMember=Y';
+            }
+        }
+        	
+
+      });
+
+      //로그인
+      $('.jsLoginBtn').on('click', function () {
+        var mbrId = $('[name=mbrId]').val();
+        var pw = $('[name=pw]').val();
+
+        //var validateOption = {};
+        //if (!api.validate.checkFormValidate($f, validateOption)) {
+        //  return;
+        //}
+        
+        //아이디 정합성 체크
+        if ($('[name=mbrId]').val() === ''){
+            api.layer.alert('아이디은(는) 필수입력항목입니다. 입력해주세요.', function(){$('[name=mbrId]').focus();});
+            return;
+        }
+        
+        //비밀번호 정합성 체크
+        if ($('[name=pw]').val() === ''){
+            api.layer.alert('비밀번호은(는) 필수입력항목입니다. 입력해주세요.', function(){$('[name=pw]').focus();});
+            return;
+        }
+        
+        var param = mdc.util.getSerializeObject($f);
+        bh.doFocusOut();
+        self.login(param);
+
+      });
+
+      self.login = function(param){
+    	  
+        api.util.submitAjax({
+          url: '/contents/MDC/COMS/client/MDCCOMS001D1.cmd',
+          data: param,
+          success: function (data) {
+            $('input[name="mbrNo"]').val(data['MBR_NO']);
+
+            bh.doFocusOut();
+            if (!api.util.isErrorCode(data)) {
+              //추가인증(휴대폰)
+              //window.open('/comm/certify/CellularCertification1.jsp', 'addAuthPopup', 'width=430,height=590, scrollbar=yes');
+
+              if($("#id_saved_btn").is(":checked")) {
+                var mbrId = $('[name=mbrId]').val();
+                mdc.util.setCookie('savedMbrId', mbrId, 30);
+              } else {
+                document.cookie = "savedMbrId=; Max-Age=0; path=/; SameSite=Lax";
+              }
+
+              if(data['previousMemberYn'] && data['MDC_MBR_TP_CD'] === "C") {
+                var params = {
+                  mbrId: $('[name=mbrId]').val(),
+                  pw: $('[name=pw]').val()
+                };
+
+                var localeStr = "회원체계 변경 안내";
+
+                if("ko_KR"=="ko_KR"){
+                  localeStr = '회원체계 변경 안내';
+                }else{
+                  localeStr = 'Notice on Membership System Update';
+                }
+
+                mdc.layer.openModal({
+                  className: 'pop_opened pop_opened1',
+                  id: 'jsPreviousMemberYnLayer',
+                  title: localeStr,
+                  width: 400,
+                  dom: $('#previousMemberPopup'),
+                  focus: $(this),
+                  ajaxOption: {data: params},
+                  useCloseButton: false
+                });
+              } else {
+                self.redirectPage();
+              }
+            } else {
+              var errorCode = api.util.getErrorCode(data);
+              if (errorCode==='CD005') {
+                
+                api.layer.alert(api.lang.getMessage('MO051'));
+                return false;
+              }
+              else if (errorCode==='CD006') {
+                
+                api.layer.alert(api.lang.getMessage('MB006')+'\n('+data['loginErrCnt']+'/'+data['loginErrMaxCnt']+')');
+                return false;
+              }
+              else if (errorCode==='CD007') {
+                
+                api.layer.alert(api.lang.getMessage('ML003'));
+                return false;
+              }
+              else if (errorCode==='CD010') {
+                
+                api.layer.confirm(api.lang.getMessage('MB003'), function () {
+                  if(site === 'opp') {
+                	  window.top.location.href = self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS007.cmd';
+                  } else {
+                	  window.top.location.href = '/contents/MDC/COMS/client/MDCCOMS007.cmd';
+                  }
+                });
+                return false;
+              }
+              else if (errorCode==='CD011') {
+                
+                
+                api.layer.confirm("이미 로그인된 계정입니다. <br/> 기존 계정을 로그아웃하고 새로 로그인하시겠습니까?",function () {
+                  param.skipDup = 'Y';
+                  self.login(param);
+                });
+                return false;
+              }
+            }
+          }
+        });
+      }
+
+      $('.jsJoinBtn').on('click', function () {
+          if(site === 'opp') {
+        	  window.top.location.href = self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS002_S0.cmd';
+          } else {
+        	  window.top.location.href = '/contents/MDC/COMS/client/MDCCOMS002_S0.cmd';
+          }
+      });
+
+      $('.jsFindIdBtn').on('click', function () {
+          if(site === 'opp') {
+        	  window.top.location.href = self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS003_S1.cmd';
+          } else {
+        	  window.top.location.href = '/contents/MDC/COMS/client/MDCCOMS003_S1.cmd';
+          }
+      });
+
+
+      $('.jsResetPwBtn').on('click', function () {
+          if(site === 'opp') {
+        	  window.top.location.href = self.getDomainName() + '/contents/OPP/COMS/client/OPPCOMS004_S1.cmd';
+          } else {
+        	  window.top.location.href = '/contents/MDC/COMS/client/MDCCOMS004_S1.cmd';
+          }
+      });
+
+      const wrappers = document.querySelectorAll('.ms-input_box');
+
+      wrappers.forEach(wrapper => {
+        const input = wrapper.querySelector('input');
+        const icon = wrapper.querySelector('.resetBtn');
+        icon.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+
+          input.value = '';
+          input.focus();
+        });
+      });
+
+     
+      // SNS 회원가입 (네이버, 카카오)
+      $('.jsSnsMember').on('click', function () {
+        const cls = $(this).attr('class');
+        const redirect = topLocation['redirect'] || '';
+        const state = encodeURIComponent(redirect);
+        
+        ['naver', 'kakao'].forEach(keyword => {
+          if(cls.indexOf(keyword) !== -1) {
+            if (site === 'opp') {
+                window.top.location.href = self.getDomainName() + "/contents/OPP/COMS/social/auth.cmd?social=" + keyword + "&state=" + state +"|login";
+            } else {
+            	window.top.location.href = "/contents/MDC/COMS/social/auth.cmd?social=" + keyword + "&state=" + state +"|login";
+            }	
+          }
+        });
+      });
+    }
+  })
+
+  $(function() {
+
+    var COOKIE_NAME = "savedMbrId";
+    var savedId = mdc.util.getCookie(COOKIE_NAME);
+
+    if(savedId) {
+      $('#mbrId').val(savedId);
+      $('#id_saved_btn').prop("checked", true);
+    }
+
+    $("#id_saved_btn").on("click",function(){
+
+      if($(this).is(":checked")) {
+        var mbrId = $('[name=mbrId]').val();
+        mdc.util.setCookie(COOKIE_NAME, mbrId, 30);
+      } else {
+        eraseCookie(COOKIE_NAME);
+      }
+
+    });
+
+    function eraseCookie(name){
+      document.cookie = name + "=; Max-Age=0; path=/; SameSite=Lax";
+    }
+
+  });
+
+
+</script>
+
+
+</body></html>
