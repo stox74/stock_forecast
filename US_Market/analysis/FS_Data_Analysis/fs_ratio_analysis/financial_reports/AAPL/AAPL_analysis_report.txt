@@ -1,0 +1,74 @@
+Company: Apple Inc. (AAPL)
+================================================================================
+FINANCIAL ANALYSIS SUMMARY REPORT
+================================================================================
+Generated: 2026-01-14 23:04:50
+Period: 2006-09-30 to 2025-09-27
+Number of Quarters: 72
+================================================================================
+
+[LATEST QUARTER METRICS]
+--------------------------------------------------------------------------------
+Revenue: 94,036,000,000
+Net Income: 23,434,000,000
+Total Assets: 359,241,000,000
+Stockholders Equity: 73,733,000,000
+
+[GROWTH ANALYSIS]
+--------------------------------------------------------------------------------
+Revenue YoY Growth: 9.63%
+Net Income YoY Growth: 9.26%
+Revenue TTM YoY Growth: 6.77%
+
+[PROFITABILITY METRICS]
+--------------------------------------------------------------------------------
+ROE: 165.25%
+ROA: 29.82%
+ROIC: 42.21%
+Gross Margin: 46.49%
+Operating Margin: 29.99%
+Net Margin: 24.92%
+
+[FINANCIAL HEALTH]
+--------------------------------------------------------------------------------
+Debt-to-Equity: 387.22%
+Current Ratio: 0.89
+Quick Ratio: 0.86
+Interest Coverage: 28.26x
+
+[CASH FLOW ANALYSIS]
+--------------------------------------------------------------------------------
+
+[REVENUE-OPERATING INCOME MODEL]
+--------------------------------------------------------------------------------
+Regression Equation:
+  Operating Income = 0.4643 * Revenue + -60850864389.83
+R-squared: 0.9895
+Average Operating Margin: 28.03%
+
+[FORECAST (Next 4 Quarters)]
+--------------------------------------------------------------------------------
+
+Quarter 1:
+  Revenue: 92,780,397,863
+  Operating Income: -17,769,613,840
+  Operating Margin: -19.15%
+
+Quarter 2:
+  Revenue: 91,541,560,973
+  Operating Income: -18,344,850,029
+  Operating Margin: -20.04%
+
+Quarter 3:
+  Revenue: 90,319,265,473
+  Operating Income: -18,912,405,459
+  Operating Margin: -20.94%
+
+Quarter 4:
+  Revenue: 89,113,290,499
+  Operating Income: -19,472,382,688
+  Operating Margin: -21.85%
+
+================================================================================
+END OF REPORT
+================================================================================
