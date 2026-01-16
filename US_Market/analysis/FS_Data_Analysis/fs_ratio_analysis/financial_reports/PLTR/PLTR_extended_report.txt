@@ -6,7 +6,7 @@ EXTENDED REPORT (with DB Forecast)
 ================================================================================
 FINANCIAL ANALYSIS SUMMARY REPORT
 ================================================================================
-Generated: 2026-01-15 00:16:23
+Generated: 2026-01-17 01:09:08
 Period: 2017-12-31 to 2025-09-30
 Number of Quarters: 28
 ================================================================================
@@ -45,9 +45,9 @@ Interest Coverage: 529.99x
 [REVENUE-OPERATING INCOME MODEL]
 --------------------------------------------------------------------------------
 Regression Equation:
-  Operating Income = 1.0180 * Revenue + -2396245627.47
-R-squared: 0.7732
-Average Operating Margin: -28.46%
+  Operating Income = 0.5038 * Revenue + -983354028.92
+R-squared: 0.9941
+Average Operating Margin: 14.10%
 
 ================================================================================
 END OF REPORT
