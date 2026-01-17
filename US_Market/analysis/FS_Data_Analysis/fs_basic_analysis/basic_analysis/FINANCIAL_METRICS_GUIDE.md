@@ -358,7 +358,7 @@ analyzer = FinancialAnalysisSystem(df_with_ratios)
 results = analyzer.generate_full_report(
     company_name="Apple Inc.",
     ticker="AAPL",
-    output_dir="./financial_reports",
+    output_dir="../financial_reports",
     current_price=150.0,
     shares_outstanding=16000000000
 )

@@ -186,7 +186,7 @@ def analyze_company_simple(df_normalized, ticker, company_name):
     results = analyzer.generate_full_report(
         company_name=company_name,
         ticker=ticker,
-        output_dir="./financial_reports"
+        output_dir="../financial_reports"
     )
 
     print(f"\n{'=' * 70}")

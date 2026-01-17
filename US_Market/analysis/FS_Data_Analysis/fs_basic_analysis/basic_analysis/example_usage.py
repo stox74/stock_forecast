@@ -122,7 +122,7 @@ def analyze_company(ticker: str, company_name: str,
         results = analyzer.generate_full_report(
             company_name=company_name,
             ticker=ticker,
-            output_dir="./financial_reports",
+            output_dir="../financial_reports",
             current_price=current_price,
             shares_outstanding=shares_outstanding
         )

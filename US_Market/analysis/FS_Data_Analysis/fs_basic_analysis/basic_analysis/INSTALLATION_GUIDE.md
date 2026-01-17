@@ -104,6 +104,7 @@ print("✓ Import 성공!")
 ```python
 # 경로 설정 (한 번만)
 from import_helper import quick_setup
+
 quick_setup()
 
 # 모듈 import
@@ -123,7 +124,7 @@ analyzer = FinancialAnalysisSystem(df_with_ratios)
 results = analyzer.generate_full_report(
     company_name="Apple Inc.",
     ticker="AAPL",
-    output_dir="./financial_reports"
+    output_dir="../financial_reports"
 )
 ```
 

@@ -141,7 +141,7 @@ def quick_analysis(df, ticker="AAPL", company_name="Apple Inc."):
     results = analyzer.generate_full_report(
         company_name=company_name,
         ticker=ticker,
-        output_dir="./financial_reports"
+        output_dir="../financial_reports"
     )
 
     print("\n" + "=" * 70)
