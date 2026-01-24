@@ -5,7 +5,6 @@ AMTM,revenue_forecast,데이터가 부족합니다. 최소 13개의 유효한 �
 CON,revenue_forecast,Expected input data to be non-empty.
 ECG,revenue_forecast,Expected input data to be non-empty.
 MOG.A,fetch_revenue,FMP revenue fetch failed: 데이터 없음
-PENG,psr_forecast,데이터가 부족합니다. 최소 13개의 유효한 관측치가 필요합니다.
 PRSU,psr_forecast,데이터가 부족합니다. 최소 13개의 유효한 관측치가 필요합니다.
 RAL,revenue_forecast,데이터가 부족합니다. 최소 13개의 유효한 관측치가 필요합니다.
 SNDK,psr_forecast,데이터가 부족합니다. 최소 13개의 유효한 관측치가 필요합니다.
