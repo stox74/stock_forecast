@@ -785,8 +785,13 @@ if __name__ == "__main__":
     # 예시 2: 카카오, 네이버만 테스트
     # TEST_TICKERS = ['035420', '035720', '051910']
 
+    # ticker_list.py의 TEST_TICKERS 사용
+    from ticker_list import TEST_TICKERS as TICKER_LIST
+
+    TEST_TICKERS = [item['ticker'] for item in TICKER_LIST]
+
     # 전체 실행 (기본값)
-    TEST_TICKERS = None
+    # TEST_TICKERS = None
 
     # =========================================================
 

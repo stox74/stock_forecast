@@ -71,7 +71,7 @@ ALL_TICKERS = [
     {'ticker': 'A031980', 'hs_code': None},          # 피에스케이홀딩스
     {'ticker': 'A009540', 'hs_code': None},          # HD한국조선해양
     {'ticker': 'A006730', 'hs_code': None},          # 서부TD
-    {'ticker': 'A080220', 'hs_code': None},          # 제주반도체
+    {'ticker': 'A080220', 'hs_code': '854232'},          # 제주반도체
     {'ticker': 'A028300', 'hs_code': None},          # HLB
     {'ticker': 'A033240', 'hs_code': None},          # 자화전자
     {'ticker': 'A067160', 'hs_code': None},          # SOOP (아프리카TV)
@@ -79,22 +79,25 @@ ALL_TICKERS = [
     {'ticker': 'A052400', 'hs_code': None},          # 코나아이
     {'ticker': 'A037270', 'hs_code': None},          # YG PLUS
     {'ticker': 'A060250', 'hs_code': None},          # NHN KCP
+    {'ticker': 'A189300', 'hs_code': None},          # 인텔리안테크
+    {'ticker': 'A059210', 'hs_code': '3006402000'},  # 메타바리오메드
 ]
 
 
 
 # 테스트용 소수 티커 리스트
 TEST_TICKERS = [
-    {'ticker': 'A131290', 'hs_code': '903090'},  # 티에스이
-    {'ticker': 'A043150', 'hs_code': '902213'},     # 바텍
-    {'ticker': 'A140860', 'hs_code': '901210'},     # 파크시스템
+    {'ticker': 'A189300', 'hs_code': None},      # 인텔리안테크
+    {'ticker': 'A059210', 'hs_code': '902213'},  # 메타바리오메드
+    {'ticker': 'A214150', 'hs_code': '901210'},  # 클래시스
+    {'ticker': 'A004000', 'hs_code': None},      # 롯데정밀화학
 ]
 
 # 반도체 섹터
 SEMICONDUCTOR_TICKERS = [
-    {'ticker': 'A131290', 'hs_code': '8542'},  # 삼성전자
-    {'ticker': 'A000660', 'hs_code': '902213'},     # SK하이닉스
-    {'ticker': 'A006400', 'hs_code': '902213'},     # 삼성SDI
+    {'ticker': 'A131290', 'hs_code': '8542'},    # 삼성전자
+    {'ticker': 'A000660', 'hs_code': '902213'},  # SK하이닉스
+    {'ticker': 'A006400', 'hs_code': '902213'},  # 삼성SDI
 ]
 
 # IT 섹터
