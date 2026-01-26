@@ -492,6 +492,8 @@ def process_single_ticker(
         final_combined_data = final_combined_data.loc['2015-01-01':]
         _cleanup(combined_df, forecast_df)
 
+        final_combined_data = final_combined_data.asfreq('Q')
+
         # ========================================
         # 4) Revenue forecasts - 노트북 스타일 적용
         # ========================================
@@ -570,14 +572,14 @@ def process_single_ticker(
         _cleanup(rev_sarima_noexog, rev_sarima_exog, rev_ets_df, rev_theta_df, rev_lstm_df, rev_prophet_df)
 
         # 디버깅: TTM 계산 후 확인
-        print(f"[000660] TTM 계산 완료:")
-        print(f"[000660]   └─ rev_final 행 수: {len(rev_final)}")
-        print(f"[000660]   └─ rev_final 범위: {rev_final.index.min().date()} ~ {rev_final.index.max().date()}")
+        print(f"[{ticker}] TTM 계산 완료:")
+        print(f"[{ticker}]   └─ rev_final 행 수: {len(rev_final)}")
+        print(f"[{ticker}]   └─ rev_final 범위: {rev_final.index.min().date()} ~ {rev_final.index.max().date()}")
         print(
-            f"[000660]   └─ 2026년 데이터 개수: {len(rev_final[(rev_final.index >= '2026-01-01') & (rev_final.index < '2027-01-01')])}")
+            f"[ticker]   └─ 2026년 데이터 개수: {len(rev_final[(rev_final.index >= '2026-01-01') & (rev_final.index < '2027-01-01')])}")
         if 'revenue_ets' in rev_final.columns:
             ets_2026 = rev_final[(rev_final.index >= '2026-01-01') & (rev_final.index < '2027-01-01')]['revenue_ets']
-            print(f"[000660]   └─ 2026년 revenue_ets 값:")
+            print(f"[ticker]   └─ 2026년 revenue_ets 값:")
             for date, val in ets_2026.items():
                 print(f"              {date.date()}: {val:.2e}")
 
@@ -619,11 +621,11 @@ def process_single_ticker(
 
         # 8) DB 업로드
         # 디버깅: DB 저장 전 rev_final 확인
-        print(f"[000660] DB 저장 직전 rev_final 확인:")
+        print(f"[{ticker}] DB 저장 직전 rev_final 확인:")
         if 'revenue_ets' in rev_final.columns:
             rev_ets_2026 = rev_final[(rev_final.index >= '2026-01-01') & (rev_final.index < '2027-01-01')][
                 ['revenue_ets', 'revenue_ets_ttm']]
-            print(f"[000660]   └─ 2026년 revenue_ets 데이터:")
+            print(f"[{ticker}]   └─ 2026년 revenue_ets 데이터:")
             print(rev_ets_2026.to_string())
 
         upload_valuation_longform(
@@ -786,12 +788,12 @@ if __name__ == "__main__":
     # TEST_TICKERS = ['035420', '035720', '051910']
 
     # ticker_list.py의 TEST_TICKERS 사용
-    from ticker_list import TEST_TICKERS as TICKER_LIST
-
-    TEST_TICKERS = [item['ticker'] for item in TICKER_LIST]
+    # from ticker_list import TEST_TICKERS as TICKER_LIST
+    #
+    # TEST_TICKERS = [item['ticker'] for item in TICKER_LIST]
 
     # 전체 실행 (기본값)
-    # TEST_TICKERS = None
+    TEST_TICKERS = None
 
     # =========================================================
 
