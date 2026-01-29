@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+
+
 """
 FMP Market Cap Data Processor Module
 
@@ -64,7 +67,7 @@ def get_fmp_market_cap(
         error_list = []
 
     # ========================================
-    # 1. FMP¿¡¼­ ½Ã°¡ÃÑ¾× µ¥ÀÌÅÍ °¡Á®¿À±â
+    # 1. FMPï¿½ï¿½ï¿½ï¿½ ï¿½Ã°ï¿½ï¿½Ñ¾ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     # ========================================
     try:
         market_data, _ = fetch_market_data_func(ticker, api_key, start_year=start_year)
@@ -78,7 +81,7 @@ def get_fmp_market_cap(
             })
             return None, msg
 
-        # ÀÏº° µ¥ÀÌÅÍ¸¦ ¿ùº°·Î Ã³¸®
+        # ï¿½Ïºï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
         fmp_market_df = process_daily_to_monthly_func(market_data, ticker).copy()
         fmp_market_df['date_month_end'] = to_month_end_safe(fmp_market_df['date'])
         fmp_market_df = fmp_market_df.drop_duplicates(
@@ -98,28 +101,28 @@ def get_fmp_market_cap(
         return None, msg
 
     # ========================================
-    # 2. DB ½Ã°¡ÃÑ¾× µ¥ÀÌÅÍ¿Í º´ÇÕ
+    # 2. DB ï¿½Ã°ï¿½ï¿½Ñ¾ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ ï¿½ï¿½ï¿½ï¿½
     # ========================================
     try:
         db_market_df = fetch_db_market_func(ticker, db_info)
 
-        # DB µ¥ÀÌÅÍ°¡ ºñ¾îÀÖ°Å³ª NoneÀÎ °æ¿ì Ã³¸®
+        # DB ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½ï¿½Ö°Å³ï¿½ Noneï¿½ï¿½ ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
         if db_market_df is None or db_market_df.empty:
             db_market_df = pd.DataFrame()
 
-        # date_month_end ÄÃ·³ È®ÀÎ ¹× »ý¼º
+        # date_month_end ï¿½Ã·ï¿½ È®ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         if not db_market_df.empty and 'date_month_end' not in db_market_df.columns:
             if 'date' in db_market_df.columns:
                 db_market_df['date_month_end'] = to_month_end_safe(db_market_df['date'])
             else:
                 db_market_df = pd.DataFrame()
 
-        # DB µ¥ÀÌÅÍ°¡ ¾ø´Â °æ¿ì
+        # DB ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
         if db_market_df.empty:
             merged_market_df = fmp_market_df.copy()
             merged_market_df['market_cap_billions_from_db'] = np.nan
         else:
-            # market_cap_billions ÄÃ·³ Ã³¸®
+            # market_cap_billions ï¿½Ã·ï¿½ Ã³ï¿½ï¿½
             if 'market_cap_billions' in db_market_df.columns:
                 db_market_df_renamed = db_market_df.rename(
                     columns={'market_cap_billions': 'market_cap_billions_from_db'}
@@ -128,25 +131,25 @@ def get_fmp_market_cap(
                 db_market_df_renamed = db_market_df[['date_month_end']].copy()
                 db_market_df_renamed['market_cap_billions_from_db'] = np.nan
 
-            # FMP µ¥ÀÌÅÍ¿Í DB µ¥ÀÌÅÍ º´ÇÕ
+            # FMP ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ DB ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
             merged_market_df = fmp_market_df.merge(
                 db_market_df_renamed[['date_month_end', 'market_cap_billions_from_db']],
                 on='date_month_end',
                 how='left'
             )
 
-        # market_cap_billions ÄÃ·³ È®ÀÎ ¹× »ý¼º
+        # market_cap_billions ï¿½Ã·ï¿½ È®ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         if 'market_cap_billions' not in merged_market_df.columns:
             merged_market_df['market_cap_billions'] = np.nan
         if 'market_cap_billions_from_db' not in merged_market_df.columns:
             merged_market_df['market_cap_billions_from_db'] = np.nan
 
-        # FMP µ¥ÀÌÅÍ ¿ì¼±, ¾øÀ¸¸é DB µ¥ÀÌÅÍ »ç¿ë
+        # FMP ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ì¼±, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ DB ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
         merged_market_df['market_cap_billions'] = merged_market_df['market_cap_billions'].fillna(
             merged_market_df['market_cap_billions_from_db']
         )
 
-        # Áßº¹ Á¦°Å ¹× Á¤·Ä
+        # ï¿½ßºï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         merged_market_df = merged_market_df.drop_duplicates(
             subset=['date_month_end']
         ).sort_values('date_month_end').reset_index(drop=True)
