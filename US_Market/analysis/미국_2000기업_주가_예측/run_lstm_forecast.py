@@ -209,25 +209,18 @@ def main():
 
         if not df_sample.empty:
             print(f"\n{sample_ticker} 예측 결과 (예측일: {today}):")
-            print(df_sample[['date', 'ticker', 'value']].to_string(index=False))
+            print(df_sample[['date', 'ticker', 'item', 'value']].to_string(index=False))
 
-            # 모델 파라미터 출력
-            if 'model_params' in df_sample.columns:
-                import json
-                params = json.loads(df_sample['model_params'].iloc[0])
-                print(f"\n사용된 모델 파라미터:")
-                print(f"  시퀀스 길이: {params['seq_length']}개월")
-                print(f"  LSTM 유닛: {params['lstm_units']}")
-                print(f"  드롭아웃: {params['dropout']}")
-                print(f"  학습률: {params['learning_rate']}")
-                if params.get('val_loss'):
-                    print(f"  검증 Loss: {params['val_loss']:.6f}")
+            # item에서 파라미터 정보 추출
+            if not df_sample.empty:
+                item_name = df_sample['item'].iloc[0]
+                print(f"\n사용된 모델: {item_name}")
         else:
             # 가장 최근 예측 결과 조회
             df_sample = get_forecast_summary(ticker=sample_ticker)
             if not df_sample.empty:
                 print(f"\n{sample_ticker} 최근 예측 결과:")
-                print(df_sample.head(10)[['date', 'ticker', 'value']].to_string(index=False))
+                print(df_sample.head(10)[['date', 'ticker', 'item', 'value']].to_string(index=False))
 
     # 전체 예측 현황
     print("\n" + "=" * 80)
@@ -274,6 +267,7 @@ if __name__ == "__main__":
         print("GPU 메모리 정리 중...")
 
         import tensorflow as tf
+
         tf.keras.backend.clear_session()
 
         sys.exit(0)
@@ -286,6 +280,7 @@ if __name__ == "__main__":
         # GPU 메모리 정리
         try:
             import tensorflow as tf
+
             tf.keras.backend.clear_session()
         except:
             pass
