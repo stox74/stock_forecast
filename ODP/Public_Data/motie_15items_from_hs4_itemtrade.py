@@ -468,10 +468,13 @@ def save_motie_15(df: pd.DataFrame, start_year: int, end_year: int, out_dir: str
 # =============================================================================
 # 10) 엔트리 실행
 # =============================================================================
-def run(service_key: str, start_year: int = 2010, end_year: int = 2025) -> pd.DataFrame:
+def run(service_key: str, start_year: int = 2010, end_year: int = 2025,
+        do_analyze: bool = True, do_save: bool = False) -> pd.DataFrame:
     df = build_motie_15_series(service_key=service_key, start_year=start_year, end_year=end_year)
-    analyze_motie_15(df)
-    save_motie_15(df, start_year, end_year, out_dir=RESULT_DIR)
+    if do_analyze:
+        analyze_motie_15(df)
+    if do_save:
+        save_motie_15(df, start_year, end_year, out_dir=RESULT_DIR)
     return df
 
 
