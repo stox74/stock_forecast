@@ -29,7 +29,7 @@ def setup_project_path():
 # 경로 설정
 setup_project_path()
 
-from stock_forecast.DATA.config import get_db_info, get_engine
+from DATA.config import get_db_info, get_engine
 
 
 # ================================

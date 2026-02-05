@@ -81,6 +81,8 @@ ALL_TICKERS = [
     {'ticker': 'A060250', 'hs_code': None},          # NHN KCP
     {'ticker': 'A189300', 'hs_code': None},          # 인텔리안테크
     {'ticker': 'A059210', 'hs_code': '3006402000'},  # 메타바리오메드
+    {'ticker': 'A278470', 'hs_code': '330499'},      # 에이피알
+    {'ticker': 'A123330', 'hs_code': '330499'},      # 제닉
 ]
 
 
@@ -123,6 +125,12 @@ CHEMICAL_TICKERS = [
     {'ticker': 'A051910', 'hs_code': None},     # LG화학
 ]
 
+# 화학 섹터
+BEAUTY_TICKERS = [
+    {'ticker': 'A278470', 'hs_code': '330499'}, # 에이피알
+    {'ticker': 'A123330', 'hs_code': '330499'}, # 제닉
+    ]
+
 
 # 사용자 정의 그룹 추가 예시
 # CUSTOM_GROUP_1 = [
@@ -158,6 +166,7 @@ def get_ticker_list(group='all'):
         'auto': AUTO_TICKERS,
         'bio': BIO_TICKERS,
         'chemical': CHEMICAL_TICKERS,
+        'beauty': BEAUTY_TICKERS,
     }
     
     if group.lower() in groups:

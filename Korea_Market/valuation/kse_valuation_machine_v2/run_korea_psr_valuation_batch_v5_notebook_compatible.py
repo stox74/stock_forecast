@@ -788,7 +788,7 @@ if __name__ == "__main__":
     # TEST_TICKERS = ['035420', '035720', '051910']
 
     # ticker_list.py의 TEST_TICKERS 사용
-    # from ticker_list import TEST_TICKERS as TICKER_LIST
+    from ticker_list import BEAUTY_TICKERS as TICKER_LIST
     #
     # TEST_TICKERS = [item['ticker'] for item in TICKER_LIST]
 
@@ -802,4 +802,4 @@ if __name__ == "__main__":
         run_batch(test_tickers=TEST_TICKERS, value_start_date=None, forecast_date=None)
     else:
         # 전체 실행 모드
-        run_batch(group="all", value_start_date=None, forecast_date=None)
+        run_batch(group="beauty", value_start_date=None, forecast_date=None)
