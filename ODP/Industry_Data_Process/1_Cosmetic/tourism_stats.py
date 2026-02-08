@@ -14,20 +14,77 @@ import pandas as pd
 import time
 from sqlalchemy import create_engine
 import sys
+from pathlib import Path
 
-# ===== DB 설정 =====
-DB_CONFIG = {
-    "host": "localhost",  # DB 호스트 (예: "localhost" 또는 IP 주소)
-    "port": 3307,  # DB 포트
-    "user": "stox7412",  # DB 사용자명
-    "password": "Apt106503!~",  # DB 비밀번호
-    "database": "investar",  # DB 이름
-}
+
+# stock_invest_function.py에서 get_db_host 직접 import
+def import_get_db_host():
+    """get_db_host 함수를 동적으로 import"""
+    try:
+        # 프로젝트 루트 찾기
+        current_file = Path(__file__).resolve()
+
+        # investment_strategy/DATA 경로 찾기
+        base_dir = current_file
+        for _ in range(5):
+            base_dir = base_dir.parent
+            data_dir = base_dir / "DATA"
+            if data_dir.exists():
+                break
+
+        if not data_dir.exists():
+            raise FileNotFoundError(f"DATA 폴더를 찾을 수 없습니다")
+
+        # DATA 폴더의 상위를 sys.path에 추가
+        if str(base_dir) not in sys.path:
+            sys.path.insert(0, str(base_dir))
+
+        # stock_invest_function에서 get_db_host import
+        from DATA.stock_invest_function import get_db_host
+
+        log("INFO", f"✓ get_db_host 함수 로드 성공")
+        return get_db_host
+
+    except Exception as e:
+        log("WARNING", f"get_db_host 로드 실패: {e}")
+        return None
+
+
+def log(tag: str, msg: str):
+    """로그 출력"""
+    print(f"[{tag}] {msg}", file=sys.stdout, flush=True)
+
+
+# get_db_host 함수 로드
+get_db_host_func = import_get_db_host()
 
 
 def get_db_info() -> Dict[str, str]:
     """DB 연결 정보 반환"""
-    return DB_CONFIG
+    if get_db_host_func:
+        try:
+            host = get_db_host_func()
+            db_info = {
+                "host": host,
+                "port": 3307,
+                "user": "stox7412",
+                "password": "Apt106503!~",
+                "database": "investar",
+            }
+            log("INFO", f"✓ DB 정보: {host}:3307")
+            return db_info
+        except Exception as e:
+            log("WARNING", f"get_db_host() 실행 실패: {e}")
+
+    # Fallback
+    log("WARNING", "get_db_host 사용 불가. 기본값 localhost 사용")
+    return {
+        "host": "localhost",
+        "port": 3307,
+        "user": "stox7412",
+        "password": "Apt106503!~",
+        "database": "investar",
+    }
 
 
 def get_engine(db_info: Dict[str, str]):
@@ -37,11 +94,6 @@ def get_engine(db_info: Dict[str, str]):
         f"@{db_info['host']}:{db_info['port']}/{db_info['database']}?charset=utf8mb4"
     )
     return create_engine(url)
-
-
-def log(tag: str, msg: str):
-    """로그 출력"""
-    print(f"[{tag}] {msg}", file=sys.stdout, flush=True)
 
 
 class TourismStatsAPI:
@@ -254,6 +306,11 @@ class TourismStatsAPI:
         start_date = datetime.strptime(start_ym, '%Y%m')
         end_date = datetime.strptime(end_ym, '%Y%m')
 
+        # 시작일이 종료일보다 뒤에 있으면 빈 리스트 반환
+        if start_date > end_date:
+            log("WARNING", f"시작 년월({start_ym})이 종료 년월({end_ym})보다 뒤에 있습니다.")
+            return []
+
         month_list = []
         current_date = start_date
 
@@ -278,6 +335,19 @@ def calculate_yoy(df: pd.DataFrame) -> pd.DataFrame:
         yoy_rate 컬럼이 추가된 DataFrame
     """
     log("INFO", "YoY 증감률 계산 시작")
+
+    # 빈 DataFrame 체크
+    if df.empty or len(df) == 0:
+        log("WARNING", "데이터가 없어 YoY 계산을 건너뜁니다.")
+        df['yoy_rate'] = None
+        return df
+
+    # 필수 컬럼 확인
+    required_cols = ['년월', '구분', '국가', '관광객수']
+    if not all(col in df.columns for col in required_cols):
+        log("ERROR", f"필수 컬럼 누락: {required_cols}")
+        df['yoy_rate'] = None
+        return df
 
     # 년월을 datetime으로 변환
     df['date'] = pd.to_datetime(df['년월'], format='%Y%m')
@@ -318,7 +388,14 @@ def save_to_db(df: pd.DataFrame, table_name: str = 'tourism_indus_stats'):
         df: 저장할 DataFrame
         table_name: 테이블 이름
     """
+    from sqlalchemy.types import VARCHAR, INT, FLOAT
+
     log("INFO", f"데이터베이스 저장 시작: {table_name}")
+
+    # 빈 DataFrame 체크
+    if df.empty or len(df) == 0:
+        log("WARNING", "저장할 데이터가 없습니다.")
+        return
 
     try:
         # DB 연결
@@ -346,11 +423,11 @@ def save_to_db(df: pd.DataFrame, table_name: str = 'tourism_indus_stats'):
             if_exists='replace',  # 기존 테이블 대체
             index=False,
             dtype={
-                '년월': 'VARCHAR(6)',
-                '구분': 'VARCHAR(10)',
-                '국가': 'VARCHAR(20)',
-                '관광객수': 'INT',
-                'yoy_rate': 'FLOAT'
+                '년월': VARCHAR(6),
+                '구분': VARCHAR(10),
+                '국가': VARCHAR(20),
+                '관광객수': INT,
+                'yoy_rate': FLOAT
             }
         )
 
@@ -378,8 +455,8 @@ def main():
     SERVICE_KEY = "2o6NG3ixxDgGQ9S4dWUgsMac9WlxfX46+JvFRsAlsXQ6xVi6CZewvNJvbHd4S7exkWwt3YWoKSdwvUNb46kSTQ=="
 
     # 조회 기간 설정
-    START_YM = "202201"  # 2022년 1월
-    END_YM = "202412"  # 2024년 12월
+    START_YM = "202001"  # 2022년 1월
+    END_YM = "202512"  # 2024년 12월
 
     log("INFO", f"조회 기간: {START_YM} ~ {END_YM}")
     log("INFO", f"조회 항목: 출국자수 (한국), 입국자수 (중국, 일본, 미국)")
@@ -390,6 +467,11 @@ def main():
     # 1. 데이터 수집
     log("INFO", "\n[1/3] 데이터 수집")
     df = api.collect_monthly_stats(START_YM, END_YM)
+
+    # 데이터가 없으면 종료
+    if df.empty or len(df) == 0:
+        log("ERROR", "수집된 데이터가 없습니다. 프로그램을 종료합니다.")
+        return
 
     # 중간 저장 (CSV)
     df.to_csv('tourism_stats_raw.csv', index=False, encoding='utf-8-sig')
