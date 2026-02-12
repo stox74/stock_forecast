@@ -3,7 +3,7 @@ from typing import Dict
 import pandas as pd
 from sqlalchemy import create_engine
 import sys
-from .stock_invest_function import get_db_host
+from stock_invest_function import get_db_host
 
 # ===== 기본 설정 =====
 BATCH_SIZE_DEFAULT = 20
@@ -13,7 +13,6 @@ MEASUREMENT_DATE = pd.Timestamp.today().strftime('%Y-%m-%d')  # created_at 일�
 
 def get_db_info() -> Dict[str, str]:
     # 기존 코드의 get_db_host(), 계정 등은 그대로 사용
-    from DATA.stock_invest_function import get_db_host  # 기존 프로젝트 함수
     return {
         "host": get_db_host(),
         "port": 3307,
