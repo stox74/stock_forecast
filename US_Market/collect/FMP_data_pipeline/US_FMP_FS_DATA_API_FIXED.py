@@ -14,23 +14,39 @@ import pandas as pd
 from sqlalchemy import create_engine, text, Table, MetaData, inspect
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from tqdm import tqdm
+# from DATA.config import  get_db_info
 
 warnings.filterwarnings('ignore')
 
 # ================================================================================
 # DB 접속 정보
 # ================================================================================
-db_info = {
-    'user': 'stox7412',
-    'password': 'Apt106503!~',
-    'host': 'YOUR_HOST',  # get_db_host() 결과로 수정 필요
-    'port': '3307',
-    'database': 'investar'
-}
+try:
+    from DATA.config import get_db_info
+    db_info = get_db_info()
+except ImportError:
+    # DATA.config를 찾지 못하면 직접 import
+    try:
+        from config import get_db_info
+        db_info = get_db_info()
+    except ImportError:
+        # 둘 다 실패하면 fallback
+        from DATA.stock_invest_function import get_db_host
+        db_info = {
+            'host': get_db_host(),
+            'port': 3307,
+            'user': 'stox7412',
+            'password': 'Apt106503!~',
+            'database': 'investar'
+        }
+        print("⚠️  Warning: Using fallback DB config")
+
+# port를 int로 변환 (config에서 가져온 값이 int/str 둘 다 가능)
+port = int(db_info.get('port', 3307))
 
 connection_string = (
     f"mysql+pymysql://{db_info['user']}:{db_info['password']}"
-    f"@{db_info['host']}:{db_info['port']}/{db_info['database']}?charset=utf8mb4"
+    f"@{db_info['host']}:{port}/{db_info['database']}?charset=utf8mb4"
 )
 
 engine = create_engine(

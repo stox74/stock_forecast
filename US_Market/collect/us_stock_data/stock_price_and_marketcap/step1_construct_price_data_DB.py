@@ -430,6 +430,133 @@ def run_pipeline(
     print("=" * 80)
 
 
+# =========================
+# 6) 노트북용 래퍼 함수 추가
+# =========================
+def collect_price_data(
+        ticker_list: List[str],
+        start_date: str,
+        end_date: str,
+        db_config: Dict,
+        test_mode: bool = False,
+        test_count: int = 10,
+        fmp_api_key: str = FMP_API_KEY
+) -> Dict:
+    """
+    노트북에서 호출하기 위한 래퍼 함수
+
+    Parameters:
+    -----------
+    ticker_list : List[str]
+        수집할 ticker 리스트
+    start_date : str
+        시작 날짜 (YYYY-MM-DD)
+    end_date : str
+        종료 날짜 (YYYY-MM-DD)
+    db_config : Dict
+        DB 접속 정보
+    test_mode : bool
+        테스트 모드 여부
+    test_count : int
+        테스트 모드일 때 수집할 ticker 수
+    fmp_api_key : str
+        FMP API 키
+
+    Returns:
+    --------
+    Dict : {'success': int, 'fail': int, 'total_records': int}
+    """
+
+    print("=" * 80)
+    print("Step 1: 주가 데이터 수집 시작")
+    print("=" * 80)
+    print(f"기간: {start_date} ~ {end_date}")
+    print(f"테스트 모드: {test_mode}")
+    if test_mode:
+        print(f"테스트 Ticker 수: {test_count}")
+    else:
+        print(f"전체 Ticker 수: {len(ticker_list)}")
+    print("=" * 80)
+
+    # 기존 run_pipeline 호출
+    if test_mode:
+        tickers = ticker_list[:test_count]
+    else:
+        tickers = ticker_list
+
+    create_dst_table(db_config)
+
+    total_saved = 0
+    used_src = 0
+    used_fmp = 0
+    skipped = 0
+    failed = 0
+    batch_data = []
+    batch_size = 100
+
+    for idx, t in enumerate(tqdm(tickers, desc="Collecting prices", unit="ticker"), start=1):
+        last_dt = get_last_saved_date(db_config, t, PRICE_INDICATOR_DST)
+
+        if last_dt is None:
+            start_dt = start_date
+        else:
+            next_dt = last_dt + dt.timedelta(days=1)
+            start_dt = next_dt.strftime("%Y-%m-%d")
+
+        if start_dt > end_date:
+            skipped += 1
+            continue
+
+        # 1) DB price_stock 우선
+        df_src = fetch_price_stock_from_src(db_config, t, start_dt, end_date)
+        if df_src is not None and not df_src.empty:
+            batch_data.append((t, df_src, "db_price_stock"))
+            used_src += 1
+        else:
+            # 2) FMP fallback
+            df_fmp = fmp_get_historical_daily(t, start_dt, end_date, fmp_api_key)
+            if df_fmp is None or df_fmp.empty:
+                failed += 1
+                continue
+            batch_data.append((t, df_fmp, "fmp"))
+            used_fmp += 1
+
+        # 배치 저장
+        if len(batch_data) >= batch_size:
+            saved = save_batch(db_config, batch_data)
+            total_saved += saved
+            batch_data = []
+
+    # 남은 배치 저장
+    if batch_data:
+        saved = save_batch(db_config, batch_data)
+        total_saved += saved
+
+    success_count = used_src + used_fmp
+
+    result = {
+        'success': success_count,
+        'fail': failed,
+        'total_records': total_saved,
+        'used_db': used_src,
+        'used_fmp': used_fmp,
+        'skipped': skipped
+    }
+
+    print("\n" + "=" * 80)
+    print("Step 1 완료!")
+    print("=" * 80)
+    print(f"성공: {success_count} tickers")
+    print(f"  - DB 사용: {used_src} tickers")
+    print(f"  - FMP 사용: {used_fmp} tickers")
+    print(f"실패: {failed} tickers")
+    print(f"건너뜀: {skipped} tickers")
+    print(f"총 저장 레코드: {total_saved:,}")
+    print("=" * 80)
+
+    return result
+
+
 if __name__ == "__main__":
     START_DATE_DEFAULT = "2015-01-01"
     END_DATE = (dt.datetime.now() - dt.timedelta(days=1)).strftime("%Y-%m-%d")
