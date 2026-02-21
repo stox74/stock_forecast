@@ -237,8 +237,8 @@ def get_trade_data_range(
 
 def collect_long_term_trade_data(
     service_key: str,
-    start_year: int = 2010,
-    end_year: int = 2025,
+    start_year: int = 2020,
+    end_year: int = 2026,
     sleep_between_years: float = 0.3,
 ) -> pd.DataFrame:
     """장기간 무역통계 데이터 수집 (연도 단위 호출)"""

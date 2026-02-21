@@ -347,14 +347,19 @@ def main(start_idx=None, end_idx=None):
 # ================================
 # 6. 실행
 # ================================
+PART_NUMBER = 1   # 이 파일의 파트 번호 (1, 2, 3 중 하나)
+TOTAL_PARTS = 3   # 전체 파트 수
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='무역 데이터 예측 배치 프로세스')
+    parser = argparse.ArgumentParser(description='무역 데이터 예측 배치 프로세스 - Part 1/3')
     parser.add_argument('--start', type=int, default=None,
-                        help='시작 인덱스 (0부터 시작)')
+                        help='시작 인덱스 (0부터 시작) - 미입력시 자동 구간 분배')
     parser.add_argument('--end', type=int, default=None,
-                        help='종료 인덱스 (exclusive)')
+                        help='종료 인덱스 (exclusive) - 미입력시 자동 구간 분배')
     parser.add_argument('--range', type=str, default=None,
-                        help='범위 지정 (예: 500:510)')
+                        help='범위 지정 (예: 0:333)')
+    parser.add_argument('--total', type=int, default=None,
+                        help='전체 HS Code 수 (자동 구간 계산용, 미입력시 DB 조회)')
 
     args = parser.parse_args()
 
@@ -365,8 +370,28 @@ if __name__ == "__main__":
             args.start = start
             args.end = end
         except ValueError:
-            print("[오류] --range 형식이 잘못되었습니다. 예: --range 500:510")
+            print("[오류] --range 형식이 잘못되었습니다. 예: --range 0:333")
             sys.exit(1)
+
+    # --start/--end 미지정시 자동 구간 분배
+    if args.start is None and args.end is None and args.range is None:
+        from trade_data_import import get_unique_hscode_list
+        from DATA.stock_invest_function import get_db_host
+
+        _db_info = {
+            'host': get_db_host(),
+            'port': 3307,
+            'user': 'stox7412',
+            'password': 'Apt106503!~',
+            'database': 'investar'
+        }
+        total_count = args.total if args.total else len(get_unique_hscode_list(_db_info))
+        chunk = total_count // TOTAL_PARTS
+
+        args.start = (PART_NUMBER - 1) * chunk                              # 0
+        args.end   = chunk if PART_NUMBER < TOTAL_PARTS else total_count     # total_count // 3
+        print(f"\n[자동 구간] Part {PART_NUMBER}/{TOTAL_PARTS}: "
+              f"{args.start} ~ {args.end} (전체 {total_count}개 중 {args.end - args.start}개)")
 
     # 범위 출력
     if args.start is not None or args.end is not None:
