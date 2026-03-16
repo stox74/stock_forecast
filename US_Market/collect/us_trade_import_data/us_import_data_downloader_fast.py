@@ -249,8 +249,8 @@ if __name__ == "__main__":
     print("\n[단계 1/3] 데이터 수집 시작...")
     us_import_month, us_import_quarter = get_us_import_data_parallel(
         hs_list=hs_code,
-        start='2013-01',
-        end='2025-09',
+        start='2015-01',
+        end='2026-01',
         api_key=api_key,
         max_workers=50  # 동시 실행 스레드 수 (30-100 사이 권장)
     )
