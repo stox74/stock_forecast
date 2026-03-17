@@ -3,7 +3,7 @@ from typing import Dict
 import pandas as pd
 from sqlalchemy import create_engine
 import sys
-from stock_invest_function import get_db_host
+from stock_forecast.DATA.stock_invest_function import get_db_host
 
 # ===== 기본 설정 =====
 BATCH_SIZE_DEFAULT = 20
