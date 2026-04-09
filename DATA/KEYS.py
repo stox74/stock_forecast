@@ -11,5 +11,5 @@ KEYS = {'ODPE': "2o6NG3ixxDgGQ9S4dWUgsMac9WlxfX46%2BJvFRsAlsXQ6xVi6CZewvNJvbHd4S
         'NAVER_SHOPPING_SEC': 'iROBLUMC3y',
         'NAVER_SEARCH_ID': 'UBWroFCkAK8tpy5CiPvB',
         'NAVER_SEARCH_SEC': 'nt_owrIGTc',
-        'FRED' : '81ada9c572f7d710dbc61f035556cbd7 '
+        'FRED' : '81ada9c572f7d710dbc61f035556cbd7'
         }

@@ -558,7 +558,7 @@ def collect_price_data(
 
 
 if __name__ == "__main__":
-    START_DATE_DEFAULT = "2026-04-01"
+    START_DATE_DEFAULT = "2026-04-05"
     END_DATE = (dt.datetime.now() - dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
     run_pipeline(
