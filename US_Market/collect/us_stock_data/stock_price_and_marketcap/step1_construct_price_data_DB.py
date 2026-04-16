@@ -10,7 +10,8 @@ import requests
 from tqdm import tqdm
 
 from DATA.stock_invest_function import get_db_host
-from DATA.us_target_ticker_list_2000 import ticker_list
+# from DATA.us_target_ticker_list_2000 import ticker_list
+from DATA.us_target_ticker_list_screened_20260411 import ticker_list as US_TICKER_LIST
 
 # =========================
 # 0) DB Config
@@ -562,7 +563,7 @@ if __name__ == "__main__":
     END_DATE = (dt.datetime.now() - dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
     run_pipeline(
-        tickers=ticker_list,
+        tickers = US_TICKER_LIST,
         start_date_default=START_DATE_DEFAULT,
         end_date=END_DATE,
         db_config=DB_CONFIG,
