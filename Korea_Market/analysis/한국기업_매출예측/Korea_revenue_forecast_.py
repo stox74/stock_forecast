@@ -1,9 +1,11 @@
 """
-한국 기업 분기별 매출 시계열 예측 시스템 (DB 스키마 수정 버전)
-- SARIMA, ETS, Theta 모델 앙상블
-- 배치 저장 최적화
-- 유연한 테스트 모드
-- 기존 DB 테이블 구조에 맞춤 (date, ticker, indicator, value)
+한국 기업 분기별 매출 시계열 예측 시스템 (DataGuide 버전)
+- 데이터 소스: korea_fs_data_from_DG (DataGuide wide → long 변환본)
+- 매출 식별: item_code='M000904001' (매출액(천원))
+- ticker 형식: 'A005930' (A 접두사 포함)
+- Q4 처리: DataGuide는 각 분기가 독립값이므로 FY 역산 불필요 ★
+- 모델: SARIMA, ETS, Theta 앙상블
+- 결과 저장: korea_revenue_forecast_result
 """
 
 import sys
@@ -18,6 +20,36 @@ from tqdm import tqdm
 import warnings
 
 warnings.filterwarnings('ignore')
+
+
+# ==================== 데이터 소스 설정 (필요 시 여기만 수정) ====================
+# 매출 데이터를 조회할 원천 테이블
+FS_TABLE = "korea_fs_data_from_DG"
+
+# DataGuide에서 매출액을 가리키는 item_code
+#   M000904001 = '매출액(천원)' (IS 시트 원본)
+REVENUE_ITEM_CODE = "M000904001"
+
+# ticker 형식: True면 'A005930' (A 접두사 포함), False면 '005930'
+TICKER_HAS_A_PREFIX = True
+
+
+def normalize_ticker_for_dg(ticker) -> str:
+    """
+    DG 테이블 조회용 ticker 정규화.
+    입력이 '005930', 5930, 'A005930' 어떤 형태든
+    DG 스키마에 맞게 'A005930' 형태로 통일한다.
+    """
+    if isinstance(ticker, int):
+        raw = f"{ticker:06d}"
+    else:
+        raw = str(ticker).strip()
+
+    # 'A' 접두사 제거 (이미 있으면) 후 6자리 zfill
+    body = raw[1:] if raw.upper().startswith('A') else raw
+    body = body.zfill(6)
+
+    return f"A{body}" if TICKER_HAS_A_PREFIX else body
 
 
 # ==================== 경로 설정 ====================
@@ -126,10 +158,13 @@ def get_connection(db_info: dict):
 # ==================== 데이터 조회 함수 ====================
 def get_all_tickers(db_info: dict) -> List[str]:
     """
-    DB에서 모든 unique ticker 리스트 조회
+    DataGuide 테이블에서 매출 데이터가 존재하는 모든 ticker 조회.
+
+    매출액(item_code='M000904001') 레코드가 하나라도 있는 기업만 대상.
+    → 매출 데이터가 없어서 예측이 불가능한 기업은 처음부터 제외된다.
 
     Returns:
-        list: ticker 리스트 (정렬됨)
+        list: ticker 리스트 (예: ['A000020', 'A000040', ...], 정렬됨)
     """
     conn = pymysql.connect(
         host=db_info["host"],
@@ -141,16 +176,17 @@ def get_all_tickers(db_info: dict) -> List[str]:
     )
 
     try:
-        sql = """
+        sql = f"""
               SELECT DISTINCT ticker
-              FROM korea_fs_data_from_DART
-              ORDER BY ticker \
+              FROM {FS_TABLE}
+              WHERE item_code = %s
+              ORDER BY ticker
               """
 
-        df = pd.read_sql(sql, conn)
+        df = pd.read_sql(sql, conn, params=[REVENUE_ITEM_CODE])
         tickers = df['ticker'].tolist()
 
-        print(f"unique ticker {len(tickers)}개 조회 완료\n")
+        print(f"매출 데이터 보유 ticker {len(tickers)}개 조회 완료 (소스: {FS_TABLE})\n")
 
         return tickers
 
@@ -160,9 +196,18 @@ def get_all_tickers(db_info: dict) -> List[str]:
 
 def adjust_fy_to_q4(df: pd.DataFrame) -> pd.DataFrame:
     """
-    FY(연간 누적) 데이터를 순수 Q4로 변환
+    ⚠️ [LEGACY] 이 함수는 DART 데이터용으로 만들어진 것이다.
 
-    Logic:
+    DART 데이터는 누적 공시 방식이라 (Q1, H1, Q3, FY) 구조였고,
+    FY에서 Q1+H1+Q3를 빼서 Q4를 역산해야 했다.
+
+    반면 DataGuide(korea_fs_data_from_DG) 데이터는 이미 각 분기가
+    독립값으로 제공되므로 이 함수를 호출하면 오히려 잘못된 결과가 나온다.
+
+    현재 파이프라인에서는 사용하지 않으며, 과거 DART 경로로 돌아갈 경우를
+    대비해 함수 자체는 보존만 해둔다.
+
+    Logic (DART 데이터 기준):
         각 연도별로 FY - (Q1 + Q2 + Q3) = 순수 Q4
 
     Parameters:
@@ -195,26 +240,32 @@ def adjust_fy_to_q4(df: pd.DataFrame) -> pd.DataFrame:
 def get_quarterly_revenue_simple(
         db_info: dict,
         ticker: Union[str, int],
-        adjust_q4: bool = True,
+        adjust_q4: bool = False,
         verbose: bool = False
 ) -> pd.DataFrame:
     """
-    특정 ticker의 분기별 매출 데이터 조회 및 Q4 조정
+    특정 ticker의 분기별 매출 시계열을 DataGuide 테이블에서 조회한다.
+
+    DataGuide는 각 분기가 독립값으로 제공되므로 FY 역산(adjust_fy_to_q4)이
+    불필요하다. 파라미터 `adjust_q4`는 기본값 False로 두고, downstream
+    호환성 때문에 시그니처만 남겨둠.
 
     Parameters:
-        db_info: DB 연결 정보
-        ticker: 종목 코드
-        adjust_q4: FY를 순수 Q4로 변환할지 여부
-        verbose: 진행 상황 출력 여부
+        db_info:    DB 연결 정보
+        ticker:     종목 코드 ('005930', 5930, 'A005930' 어느 형태든 허용)
+        adjust_q4:  [LEGACY, DG에서는 무시됨] True로 설정해도 경고만 표시하고 skip
+        verbose:    진행 상황 출력 여부
 
     Returns:
-        순수 분기별 매출 데이터
+        DataFrame with columns:
+            report_date      DATE      (DG의 date 컬럼을 그대로 alias, downstream 호환)
+            thstrm_amount    DOUBLE    (DG의 value를 alias, downstream 호환)
+            bsns_year        INT       (date에서 추출, downstream 호환)
+            quarter          str       (date에서 추출: 'Q1'/'Q2'/'Q3'/'Q4')
+            ticker           str       (입력 ticker 정규화본)
     """
-    # ticker 정규화
-    if isinstance(ticker, int):
-        ticker_str = f"{ticker:06d}"
-    else:
-        ticker_str = str(ticker).zfill(6)
+    # ticker 정규화 (A 접두사 보장)
+    ticker_str = normalize_ticker_for_dg(ticker)
 
     conn = pymysql.connect(
         host=db_info["host"],
@@ -226,27 +277,39 @@ def get_quarterly_revenue_simple(
     )
 
     try:
-        sql = """
-              SELECT *
-              FROM korea_fs_data_from_DART
+        # DG 스키마 → 기존 downstream 코드가 기대하는 컬럼명으로 alias
+        # (forecast_quarterly_revenue() 이하가 report_date, thstrm_amount를
+        #  그대로 사용하므로 여기서 이름만 맞춰준다)
+        sql = f"""
+              SELECT
+                  date                  AS report_date,
+                  value                 AS thstrm_amount,
+                  YEAR(date)            AS bsns_year,
+                  ticker                AS ticker
+              FROM {FS_TABLE}
               WHERE ticker = %s
-                AND account_id IN ('ifrs_Revenue', 'ifrs-full_Revenue')
-              ORDER BY bsns_year, report_date \
+                AND item_code = %s
+                AND value IS NOT NULL
+              ORDER BY date
               """
 
-        df = pd.read_sql(sql, conn, params=[ticker_str])
+        df = pd.read_sql(sql, conn, params=[ticker_str, REVENUE_ITEM_CODE])
 
         if df.empty:
             if verbose:
                 print(f"  {ticker_str}: 데이터 없음")
             return df
 
+        # quarter 컬럼 유도 (downstream 호환)
+        df['quarter'] = 'Q' + ((pd.to_datetime(df['report_date']).dt.month + 2) // 3).astype(str)
+
         if verbose:
             print(f"  {ticker_str}: 매출 데이터 {len(df)}행 조회")
 
-        # Q4 조정
+        # adjust_q4는 DG 데이터에서 불필요 — 호출되더라도 skip하고 경고만
         if adjust_q4:
-            df = adjust_fy_to_q4(df)
+            if verbose:
+                print(f"  [INFO] DG 데이터는 분기 독립값이므로 adjust_fy_to_q4 skip")
 
         return df
 
@@ -276,8 +339,8 @@ def forecast_quarterly_revenue(
         (성공여부, 예측결과 DataFrame, 에러메시지)
     """
     try:
-        # 1. 데이터 조회
-        revenue_df = get_quarterly_revenue_simple(db_info, ticker, adjust_q4=True, verbose=verbose)
+        # 1. 데이터 조회 (DG 데이터는 이미 분기 독립값이므로 adjust_q4=False)
+        revenue_df = get_quarterly_revenue_simple(db_info, ticker, adjust_q4=False, verbose=verbose)
 
         if revenue_df.empty:
             return False, pd.DataFrame(), "데이터 없음"
@@ -694,8 +757,8 @@ def main():
     # TEST_MODE = None   : 대화형 모드 (실행 시 선택)
     # TEST_MODE = True   : 자동 테스트 모드 (TEST_SIZE 개수만큼 실행)
     # TEST_MODE = False  : 전체 모드 (전체 ticker 실행)
-    TEST_MODE = None
-    TEST_SIZE = 20  # 테스트 모드 시 ticker 개수
+    TEST_MODE = False
+    TEST_SIZE = 30  # 테스트 모드 시 ticker 개수
     # ========================================================================
 
     # DB 연결 정보
