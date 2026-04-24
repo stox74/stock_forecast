@@ -12,7 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import time
 
-from DATA.stock_invest_function import *
+from stock_forecast.DATA.stock_invest_function import *
 
 # 1. HS 코드 모듈에서 불러오기
 from us_top_import_hs_code import get_hs_codes
