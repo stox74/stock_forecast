@@ -41,7 +41,7 @@ except ImportError as e:
 
 # ==================== 설정 ====================
 # 데이터 수집 기간 설정
-START_DATE = "20260101"  # 시작일 (YYYYMMDD)
+START_DATE = "20260401"  # 시작일 (YYYYMMDD)
 END_DATE = datetime.today().strftime("%Y%m%d")  # 오늘까지
 
 # API 호출 설정
