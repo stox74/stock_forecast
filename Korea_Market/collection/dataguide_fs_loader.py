@@ -439,8 +439,8 @@ if __name__ == "__main__":
     logger.info(f"Excel dir: {EXCEL_DIR}")
 
     file_configs = [
-        {"path": EXCEL_DIR / "FCFF_RIM_DATA.xlsx",    "market": "KS"},
-        {"path": EXCEL_DIR / "FCFF_RIM_KQ_DATA.xlsx", "market": "KQ"},
+        {"path": EXCEL_DIR / "FCFF_RIM_DATA_2026_1Q.xlsx",    "market": "KS"},
+        {"path": EXCEL_DIR / "FCFF_RIM_KQ_DATA_2026_1Q.xlsx", "market": "KQ"},
     ]
 
     # DB 연결 정보 (환경에 맞게 조정)

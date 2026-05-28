@@ -240,7 +240,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quarters",
         type=int,
-        default=8,
+        default=2,
         help="수집할 최근 분기 수 (기본값: 8). annual 모드일 때는 연도 수로 동작",
     )
     parser.add_argument(
