@@ -50,3 +50,14 @@ A243840	nan can not be used with MySQL
 A267850	nan can not be used with MySQL
 A062970	nan can not be used with MySQL
 A330590	nan can not be used with MySQL
+A011810	nan can not be used with MySQL
+A002410	nan can not be used with MySQL
+A140910	nan can not be used with MySQL
+A026150	nan can not be used with MySQL
+A041590	nan can not be used with MySQL
+A174900	nan can not be used with MySQL
+A095700	nan can not be used with MySQL
+A024800	nan can not be used with MySQL
+A025950	nan can not be used with MySQL
+A217730	nan can not be used with MySQL
+A330590	nan can not be used with MySQL
