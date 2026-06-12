@@ -61,3 +61,73 @@ A024800	nan can not be used with MySQL
 A025950	nan can not be used with MySQL
 A217730	nan can not be used with MySQL
 A330590	nan can not be used with MySQL
+A002390	nan can not be used with MySQL
+A004870	nan can not be used with MySQL
+A005110	nan can not be used with MySQL
+A019490	nan can not be used with MySQL
+A023590	[A023590] v8 sanity guard: 산출 지분가치 312.62조 vs 실제 시총 1.78조 = 175.9배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A033920	[A033920] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.22조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A089590	[A089590] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.40조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A001080	[A001080] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.21조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A001210	nan can not be used with MySQL
+A001470	nan can not be used with MySQL
+A002410	nan can not be used with MySQL
+A011810	nan can not be used with MySQL
+A000680	[A000680] v8 sanity guard: 산출 지분가치 257.64조 vs 실제 시총 0.29조 = 887.2배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A003830	[A003830] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.15조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A006370	[A006370] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.05조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A011930	[A011930] v8 sanity guard: 산출 지분가치 0.01조 vs 실제 시총 0.55조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A042700	[A042700] v8 sanity guard: 산출 지분가치 0.45조 vs 실제 시총 30.40조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A063160	[A063160] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.10조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A000040	nan can not be used with MySQL
+A000300	[A000300] v8 sanity guard: 산출 지분가치 0.01조 vs 실제 시총 0.17조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A000700	[A000700] v8 sanity guard: 산출 지분가치 6.22조 vs 실제 시총 0.14조 = 43.7배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A006380	nan can not be used with MySQL
+A009580	[A009580] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.13조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A140910	nan can not be used with MySQL
+A161390	[A161390] v8 sanity guard: 산출 지분가치 288,723,546,369,776,402,974,753,836,970,337,827,241,837,976,871,174,871,567,299,133,1
+A180640	[A180640] v8 sanity guard: 산출 지분가치 0.23조 vs 실제 시총 7.50조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A293940	nan can not be used with MySQL
+A171090	nan can not be used with MySQL
+A217730	nan can not be used with MySQL
+A253590	[A253590] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.69조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A041520	nan can not be used with MySQL
+A042600	[A042600] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.21조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A043260	[A043260] v8 sanity guard: 산출 지분가치 0.03조 vs 실제 시총 3.02조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A048410	[A048410] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 1.37조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A062970	[A062970] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.20조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A087010	[A087010] v8 sanity guard: 산출 지분가치 0.02조 vs 실제 시총 6.70조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A104460	nan can not be used with MySQL
+A123330	nan can not be used with MySQL
+A141080	nan can not be used with MySQL
+A293780	[A293780] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.18조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A011040	[A011040] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.16조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A950130	nan can not be used with MySQL
+A084990	[A084990] v8 sanity guard: 산출 지분가치 0.01조 vs 실제 시총 0.32조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A088130	[A088130] v8 sanity guard: 산출 지분가치 5.58조 vs 실제 시총 0.16조 = 35.9배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A098460	[A098460] v8 sanity guard: 산출 지분가치 702,521,809,259,806,600,763,909,641,913,293,407,638,846,367,138,169,872,710,158,514,6
+A100130	nan can not be used with MySQL
+A124500	nan can not be used with MySQL
+A182360	nan can not be used with MySQL
+A204620	[A204620] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.33조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A225190	[A225190] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.14조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A264660	[A264660] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.17조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A327260	[A327260] v8 sanity guard: 산출 지분가치 0.01조 vs 실제 시총 0.73조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A018000	nan can not be used with MySQL
+A031980	nan can not be used with MySQL
+A038540	[A038540] v8 sanity guard: 산출 지분가치 14.93조 vs 실제 시총 0.12조 = 127.9배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A089030	[A089030] v8 sanity guard: 산출 지분가치 0.05조 vs 실제 시총 2.01조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A094170	[A094170] v8 sanity guard: 산출 지분가치 0.01조 vs 실제 시총 0.86조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A095700	nan can not be used with MySQL
+A228760	nan can not be used with MySQL
+A240810	[A240810] v8 sanity guard: 산출 지분가치 0.14조 vs 실제 시총 5.51조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A263750	nan can not be used with MySQL
+A013120	nan can not be used with MySQL
+A025950	nan can not be used with MySQL
+A032190	[A032190] v8 sanity guard: 산출 지분가치 131.68조 vs 실제 시총 0.78조 = 168.1배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A060720	[A060720] v8 sanity guard: 산출 지분가치 2,083,198,717,169,480,012,397,939,469,246,172,156,645,968,389,639,779,435,659,949,222
+A082270	[A082270] v8 sanity guard: 산출 지분가치 0.01조 vs 실제 시총 0.72조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A122640	[A122640] v8 sanity guard: 산출 지분가치 0.02조 vs 실제 시총 0.64조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A267320	nan can not be used with MySQL
+A329180	[A329180] v8 sanity guard: 산출 지분가치 1.73조 vs 실제 시총 78.09조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A330590	nan can not be used with MySQL
