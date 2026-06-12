@@ -437,10 +437,10 @@ if __name__ == "__main__":
 # # 시작과 끝 모두 지정
 # python run_trade_data_adv_forecast.py --start 100 --end 200
 # 터미널 1
-# python run_trade_data_adv_forecast_v2_part1.py --range 0:167
+# python run_trade_adv_forecast_v2_part1.py --range 0:167
 #
 # 터미널 2
-# python run_trade_data_adv_forecast_v2_part2.py --range 167:334
+# python run_trade_adv_forecast_v2_part2.py --range 167:334
 #
 # 터미널 3
-# python run_trade_data_adv_forecast_v2_part3.py --range 334:500
+# python run_trade_adv_forecast_v2_part3.py --range 334:500
