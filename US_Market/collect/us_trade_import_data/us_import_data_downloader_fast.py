@@ -11,8 +11,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import time
+import sys
+import os
 
-from stock_forecast.DATA.stock_invest_function import *
+import socket
+
+def get_db_host():
+    """집 내부망이면 내부 IP, 아니면 외부 DDNS 반환 (노트북·데스크탑 공용)"""
+    try:
+        local_ip = socket.gethostbyname(socket.gethostname())
+        if local_ip.startswith("192.168."):
+            return '192.168.0.230'        # 집 내부 IP
+        else:
+            return 'hystox74.synology.me'  # 외부 접속용 DDNS
+    except Exception as e:
+        print("⚠️ IP 확인 실패:", e)
+        return 'hystox74.synology.me'
+
 
 # 1. HS 코드 모듈에서 불러오기
 from us_top_import_hs_code import get_hs_codes
