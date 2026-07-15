@@ -135,7 +135,7 @@ if __name__ == "__main__":
         response = input("수집하려면 'y'를 입력하세요: ")
 
         if response.lower() == 'y':
-            df_multiple = crawl_multiple_years_selenium(2023, 2025)
+            df_multiple = crawl_multiple_years_selenium(2023, 2026)
             if df_multiple is not None:
                 df_multiple.to_csv('tsmc_monthly_revenue_2023_2025.csv', index=False, encoding='utf-8-sig')
                 print("\n✓ 여러 연도 데이터가 'tsmc_monthly_revenue_2023_2025.csv' 파일로 저장되었습니다.")
