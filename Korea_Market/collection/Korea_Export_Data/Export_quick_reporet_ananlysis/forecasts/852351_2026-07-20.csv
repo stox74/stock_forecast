@@ -1,0 +1,13 @@
+﻿forecast_month,hs_code,item_name,forecast_amount_usd,forecast_unit_price_usd_per_kg,models_used_amount,models_used_price,based_on_flash_date
+2026-08,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2484284538.0501447,94250.11318188626,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2026-09,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2469682673.7334266,92406.43725568916,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2026-10,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2455047038.976955,91984.01345793722,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2026-11,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2477135078.872675,92135.95467759657,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2026-12,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2508325149.6303954,91082.43657600642,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-01,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2741752980.6454773,93745.39187992585,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-02,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2637896382.68533,91624.3335287374,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-03,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2692073763.0683036,91165.7715518829,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-04,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2637454776.3465867,91387.56673410682,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-05,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2598229130.4674087,90277.21541900783,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-06,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2483995870.918553,90255.42968783867,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
+2027-07,852351,솔리드 스테이트(solid-state)의 비휘발성 기억장치,2551862551.4657044,84765.17805153326,"SARIMA,Theta,ETS","SARIMA,Theta,ETS",2026-07-20
