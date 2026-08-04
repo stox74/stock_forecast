@@ -1,0 +1,7 @@
+{
+  "api_key": "5f6l1vlck58a9hjq12rnr251ik1ss6sfmavteoslu1k9kd5h6hvi5q1iranuitpm",
+  "plan": "Starter",
+  "tokens_per_minute": 20,
+  "subscribed_at": "2026-08-03",
+  "_note": "이 파일은 절대 git에 커밋하지 마십시오. .gitignore에 keepa_config.json 을 추가하십시오."
+}
