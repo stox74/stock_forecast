@@ -131,3 +131,6 @@ A122640	[A122640] v8 sanity guard: 산출 지분가치 0.02조 vs 실제 시총 
 A267320	nan can not be used with MySQL
 A329180	[A329180] v8 sanity guard: 산출 지분가치 1.73조 vs 실제 시총 78.09조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
 A330590	nan can not be used with MySQL
+A011300	[A011300] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.04조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A051630	[A051630] v8 sanity guard: 산출 지분가치 0.00조 vs 실제 시총 0.04조 = 0.0배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
+A089860	[A089860] v8 sanity guard: 산출 지분가치 39.04조 vs 실제 시총 1.14조 = 34.2배 (허용 ±30배) → 평가 제외. 입력(주식수/FCFF/NWC) 점검 필요
