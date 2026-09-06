@@ -1,0 +1,73 @@
+BA	[BA] v12 sanity guard: 산출 내재가치 $28,849.2B vs 실제 시총 $167.8B = 172.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+LOW	[LOW] v12 sanity guard: 산출 내재가치 $88,621.6B vs 실제 시총 $114.6B = 773.1배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+EMR	[EMR] No forecast Sales (forecast_date=None)
+RCL	[RCL] No forecast Sales (forecast_date=None)
+SNDK	[SNDK] No actual Sales — run revenue forecast notebook first
+SGEN	[SGEN] v12 sanity guard: 산출 내재가치 $0.6B vs 실제 시총 $43.2B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+MTD	[MTD] v12 sanity guard: 산출 내재가치 $0.3B vs 실제 시총 $27.2B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+NETE	[NETE] No forecast Sales (forecast_date=None)
+SPLK	[SPLK] v12 sanity guard: 산출 내재가치 $0.7B vs 실제 시총 $26.4B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+SHLM	[SHLM] v12 sanity guard: 산출 내재가치 $0.2B vs 실제 시총 $26.1B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+PSTG	[PSTG] v12 sanity guard: 산출 내재가치 $0.2B vs 실제 시총 $28.5B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+VRSN	[VRSN] v12 sanity guard: 산출 내재가치 $0.3B vs 실제 시총 $26.4B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+EXAS	[EXAS] v12 sanity guard: 산출 내재가치 $0.6B vs 실제 시총 $20.0B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+XPO	[XPO] No forecast Sales (forecast_date=None)
+J	[J] No forecast Sales (forecast_date=None)
+ULS	[ULS] No actual Sales — run revenue forecast notebook first
+GDDY	[GDDY] v12 sanity guard: 산출 내재가치 $0.0B vs 실제 시총 $13.4B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+PSKY	[PSKY] No actual Sales — run revenue forecast notebook first
+SMMT	[SMMT] v12 sanity guard: 산출 내재가치 $0.5B vs 실제 시총 $14.0B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+MDGL	[MDGL] v12 sanity guard: 산출 내재가치 $0.4B vs 실제 시총 $12.5B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+AAL	[AAL] v12 sanity guard: 산출 내재가치 $1,100.2B vs 실제 시총 $8.7B = 126.6배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+AXSM	[AXSM] v12 sanity guard: 산출 내재가치 $0.1B vs 실제 시총 $10.6B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+FBHS	[FBHS] No forecast Sales (forecast_date=None)
+BRKS	[BRKS] No forecast Sales (forecast_date=None)
+CYTK	[CYTK] No forecast Sales (forecast_date=None)
+GKOS	[GKOS] v12 sanity guard: 산출 내재가치 $0.3B vs 실제 시총 $10.5B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+MSGS	[MSGS] No forecast Sales (forecast_date=None)
+OS	[OS] No actual Sales — run revenue forecast notebook first
+NEWR	[NEWR] v12 sanity guard: 산출 내재가치 $0.0B vs 실제 시총 $6.2B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+IBRX	[IBRX] v12 sanity guard: 산출 내재가치 $0.2B vs 실제 시총 $8.5B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+CVLT	[CVLT] v12 sanity guard: 산출 내재가치 $0.1B vs 실제 시총 $5.7B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+SSRM	[SSRM] v12 sanity guard: 산출 내재가치 $0.0B vs 실제 시총 $7.7B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+LGN	[LGN] No actual Sales — run revenue forecast notebook first
+HRB	[HRB] v12 sanity guard: 산출 내재가치 $345.8B vs 실제 시총 $6.2B = 55.6배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+LIF	[LIF] No actual Sales — run revenue forecast notebook first
+IEP	[IEP] No forecast Sales (forecast_date=None)
+TWNK	[TWNK] No forecast Sales (forecast_date=None)
+DAN	[DAN] No forecast Sales (forecast_date=None)
+VRNS	[VRNS] v12 sanity guard: 산출 내재가치 $0.1B vs 실제 시총 $5.3B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+INDV	[INDV] No actual Sales — run revenue forecast notebook first
+CAR	[CAR] v12 sanity guard: 산출 내재가치 $1,511.7B vs 실제 시총 $4.9B = 308.5배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+COMM	[COMM] No forecast Sales (forecast_date=None)
+DJT	[DJT] No actual Sales — run revenue forecast notebook first
+WSC	[WSC] No forecast Sales (forecast_date=None)
+SMG	[SMG] v12 sanity guard: 산출 내재가치 $202.7B vs 실제 시총 $3.5B = 58.6배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+CXT	[CXT] No actual Sales — run revenue forecast notebook first
+CON	[CON] No actual Sales — run revenue forecast notebook first
+COTY	[COTY] No actual Sales — run revenue forecast notebook first
+SIX	[SIX] v12 sanity guard: 산출 내재가치 $2,140.2B vs 실제 시총 $2.7B = 793.6배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+PLUG	[PLUG] No actual Sales — run revenue forecast notebook first
+VGR	[VGR] No actual Sales — run revenue forecast notebook first
+PINC	[PINC] FMP IS/BS load failed
+HBI	[HBI] v12 sanity guard: 산출 내재가치 $98.9B vs 실제 시총 $2.3B = 43.2배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+TVPT	[TVPT] No actual Sales — run revenue forecast notebook first
+SEM	[SEM] No actual Sales — run revenue forecast notebook first
+CLDX	[CLDX] v12 sanity guard: 산출 내재가치 $0.0B vs 실제 시총 $2.6B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+HLF	[HLF] v12 sanity guard: 산출 내재가치 $1,221.6B vs 실제 시총 $1.3B = 951.8배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+AGIO	[AGIO] v12 sanity guard: 산출 내재가치 $0.0B vs 실제 시총 $2.0B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+WINA	[WINA] v12 sanity guard: 산출 내재가치 $157.1B vs 실제 시총 $1.1B = 137.5배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+STGW	[STGW] No forecast Sales (forecast_date=None)
+AXGN	[AXGN] v12 sanity guard: 산출 내재가치 $0.0B vs 실제 시총 $2.6B = 0.0배 (허용 ±30배) → 평가 제외. 입력 데이터(통화/주식수/BV/ROE) 점검 필요
+NVAX	[NVAX] No forecast Sales (forecast_date=None)
+SBET	[SBET] No forecast Sales (forecast_date=None)
+ASTH	[ASTH] No actual Sales — run revenue forecast notebook first
+SYX	[SYX] No forecast Sales (forecast_date=None)
+BTCM	[BTCM] No forecast Sales (forecast_date=None)
+MBX	[MBX] No actual Sales — run revenue forecast notebook first
+VVI	[VVI] No forecast Sales (forecast_date=None)
+CMP	[CMP] No forecast Sales (forecast_date=None)
+PVLA	[PVLA] No actual Sales — run revenue forecast notebook first
+GLYC	[GLYC] No forecast Sales (forecast_date=None)
+PRSU	[PRSU] No forecast Sales (forecast_date=None)
+LIND	[LIND] No forecast Sales (forecast_date=None)
