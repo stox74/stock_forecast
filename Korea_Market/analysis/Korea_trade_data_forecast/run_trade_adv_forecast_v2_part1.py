@@ -429,7 +429,7 @@ if __name__ == "__main__":
 
 
 # 0번째부터 99번째까지 (100개)
-# python run_trade_data_adv_forecast.py --range 0:100
+# python run_trade_adv_forecast_v2_part1.py --range 0:100
 # 시작만 지정 (끝은 리스트 끝까지)
 # python run_trade_data_adv_forecast.py --start 0
 # # 끝만 지정 (처음부터 지정 인덱스까지)
