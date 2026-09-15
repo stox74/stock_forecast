@@ -1,15 +1,28 @@
-"""tw_revenue.py — 대만 대표기업 월 매출 수집·예측·시각화 (단일 파일 버전)
+"""tw_revenue.py — 대만 대표기업 월 매출 수집·예측·시각화 (단일 파일 v3)
 
-이 파일 하나만 있으면 됩니다. 사용법:
+★ 사용법: 이 파일을 아무 폴더에나 두고 "더블클릭"하면 메뉴가 뜹니다.
+   PowerShell, cd, pip 전부 필요 없습니다.
+   (필요 패키지는 처음 실행할 때 자동으로 설치됩니다)
 
-  pip install requests pandas lxml statsmodels matplotlib
-  python tw_revenue.py collect --start 2019-01   # 과거 이력 수집
-  python tw_revenue.py forecast --horizon 6      # SARIMA 예측 (기간 조절: --horizon N)
-  python tw_revenue.py plot                      # 차트 생성 (output 폴더)
-  python tw_revenue.py run                       # 매월: 증분수집 -> 예측 -> 시각화
+   DB(revenue.db)와 차트(output 폴더)는 이 파일과 같은 폴더에 생성됩니다.
 
-DB(revenue.db)와 차트(output/)는 이 파일과 같은 폴더에 생성됩니다.
+명령줄로도 사용 가능:
+  python tw_revenue.py debug / collect --start 2019-01 / forecast --horizon 6 / plot / run
 """
+# --- 필요 패키지 자동 설치 (최초 1회) -------------------------------
+def _ensure_packages():
+    import importlib.util, subprocess, sys
+    need = {"requests": "requests", "pandas": "pandas", "lxml": "lxml",
+            "statsmodels": "statsmodels", "matplotlib": "matplotlib"}
+    missing = [pip for mod, pip in need.items()
+               if importlib.util.find_spec(mod) is None]
+    if missing:
+        print(f"필요 패키지 자동 설치 중: {', '.join(missing)} (잠시 기다려 주세요)")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+        print("설치 완료.\n")
+
+_ensure_packages()
+# ---------------------------------------------------------------------
 # ======================================================================
 # === config.py ===
 # ======================================================================
@@ -30,10 +43,12 @@ COMPANIES = {
     "2382": "Quanta Computer",
 }
 
-# MOPS 월별 매출 집계 페이지 (구/신 도메인 순서대로 시도)
+# MOPS 월별 매출 집계 페이지
+# 2024년 사이트 개편 이후 신 도메인(mops)의 정적 페이지는 404이며,
+# 구버전 아카이브(mopsov)에 데이터가 남아 있으므로 mopsov를 먼저 시도한다.
 MOPS_URL_TEMPLATES = [
-    "https://mops.twse.com.tw/nas/t21/{market}/t21sc03_{roc_year}_{month}_0.html",
     "https://mopsov.twse.com.tw/nas/t21/{market}/t21sc03_{roc_year}_{month}_0.html",
+    "https://mops.twse.com.tw/nas/t21/{market}/t21sc03_{roc_year}_{month}_0.html",
 ]
 
 # TWSE OpenAPI - 상장사 최신 월 매출 (JSON)
@@ -41,11 +56,17 @@ TWSE_OPENAPI_MONTHLY = "https://openapi.twse.com.tw/v1/opendata/t187ap05_L"
 
 MARKET = "sii"  # sii=상장, otc=상궤(店頭), rotc=흥궤
 
+# MOPS는 브라우저가 아닌 요청을 차단하는 경우가 있어 브라우저형 헤더를 최대한 갖춘다
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-    )
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,"
+               "image/avif,image/webp,*/*;q=0.8"),
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+    "Referer": "https://mopsov.twse.com.tw/mops/web/index",
+    "Connection": "keep-alive",
 }
 
 # 요청 간 대기 시간(초) - 서버 부담 방지
@@ -246,12 +267,15 @@ def fetch_mops_month(year: int, month: int, market: str = MARKET):
         try:
             r = requests.get(url, headers=REQUEST_HEADERS, timeout=30)
         except requests.RequestException as e:
-            print(f"  [warn] 요청 실패 {url}: {e}")
+            print(f"\n  [warn] 요청 실패 {url}: {e}")
             continue
         if r.status_code == 200 and len(r.content) > 5000:
             r.encoding = "big5"
             html = r.text
             break
+        else:
+            # 원인을 알 수 있도록 상태를 출력 (404=페이지 없음, 403=차단 가능성)
+            print(f"\n  [info] HTTP {r.status_code}, {len(r.content)} bytes ← {url}")
     if html is None:
         return None
 
@@ -593,7 +617,84 @@ from datetime import date
 
 
 
+def interactive():
+    """인자 없이(더블클릭 등) 실행됐을 때의 대화형 메뉴."""
+    from pathlib import Path
+    here = Path(__file__).resolve().parent
+    print("=" * 60)
+    print(" 대만 대표기업 월 매출 수집·예측·시각화")
+    print(f" 실행 위치 : {here}")
+    print(f" DB/차트   : 이 폴더 안에 자동 생성됩니다")
+    print("=" * 60)
+    conn = get_conn()
+    print(f"대상 기업: {', '.join(f'{v}({k})' for k, v in COMPANIES.items())}")
+
+    while True:
+        print("""
+[1] 접속 진단 (debug)
+[2] 과거 데이터 수집 (collect)
+[3] 최신 월 수집 (latest)
+[4] 예측 (forecast)
+[5] 시각화 (plot)
+[6] 전체 실행: 최신수집→예측→시각화 (run)
+[0] 종료""")
+        choice = input("번호 선택 > ").strip()
+        try:
+            if choice == "1":
+                _debug(conn, None)
+            elif choice == "2":
+                start = input("시작 연월 (예: 2019-01) > ").strip() or "2019-01"
+                from datetime import date as _d
+                t = _d.today()
+                y, mo = (t.year, t.month - 1) if t.month > 1 else (t.year - 1, 12)
+                collect_range(conn, start, f"{y}-{mo:02d}")
+            elif choice == "3":
+                collect_latest(conn)
+            elif choice == "4":
+                h = input("예측 개월 수 (기본 6) > ").strip()
+                forecast_all(conn, horizon=int(h) if h else 6)
+            elif choice == "5":
+                plot_all(conn)
+            elif choice == "6":
+                collect_latest(conn)
+                forecast_all(conn, horizon=6)
+                plot_all(conn)
+            elif choice == "0":
+                break
+            else:
+                print("0~6 중에서 선택하세요.")
+        except Exception as e:
+            print(f"\n[오류] {e}\n")
+    conn.close()
+    input("\nEnter를 누르면 창이 닫힙니다...")
+
+
+def _debug(conn, ym):
+    import requests
+    if ym is None:
+        t = date.today()
+        y, mo = (t.year, t.month - 1) if t.month > 1 else (t.year - 1, 12)
+        ym = f"{y}-{mo:02d}"
+    y, mo = map(int, ym.split("-"))
+    roc = y - 1911
+    print(f"진단 대상: {ym} (민국 {roc}년 {mo}월)\n")
+    for tpl in MOPS_URL_TEMPLATES:
+        url = tpl.format(market="sii", roc_year=roc, month=mo)
+        try:
+            r = requests.get(url, headers=REQUEST_HEADERS, timeout=30)
+            head = r.content[:200].decode("big5", "ignore").replace("\n", " ")
+            print(f"[{r.status_code}] {len(r.content):>8} bytes  {url}")
+            print(f"        본문 앞부분: {head[:120]}\n")
+        except Exception as e:
+            print(f"[예외] {url}\n        {e}\n")
+
+
 def main():
+    import sys
+    if len(sys.argv) == 1:      # 인자 없이 실행(더블클릭 포함) → 대화형 메뉴
+        interactive()
+        return
+
     p = argparse.ArgumentParser(description="대만 대표기업 월 매출 수집/예측/시각화")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -610,6 +711,9 @@ def main():
 
     r = sub.add_parser("run", help="latest → forecast → plot")
     r.add_argument("--horizon", type=int, default=6)
+
+    d = sub.add_parser("debug", help="특정 월 요청 상태 진단")
+    d.add_argument("--ym", default=None, help="YYYY-MM (기본: 지난달)")
 
     args = p.parse_args()
     conn = get_conn()
@@ -636,6 +740,9 @@ def main():
         collect_latest(conn)
         forecast_all(conn, horizon=args.horizon)
         plot_all(conn)
+
+    elif args.cmd == "debug":
+        _debug(conn, args.ym)
 
     conn.close()
 
