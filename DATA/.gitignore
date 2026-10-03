@@ -1,0 +1,3 @@
+# DB password / API keys: keep local only
+/config.py
+/KEYS.py
