@@ -10,6 +10,7 @@ from . import conftest  # noqa: F401
 from DATA.fdriver import db, live
 from DATA.fdriver.nowcast import features as ft
 from DATA.fdriver.nowcast import run
+from DATA.fdriver.evaluate import live_check
 from .test_adapters import DB_OK
 
 T = pd.Timestamp
@@ -108,6 +109,31 @@ class TestLiveReproduces2a(unittest.TestCase):
         self.assertEqual(len(got), len(ref))
         np.testing.assert_allclose(m["g_hat_ref"], m["g_hat_live"], rtol=0, atol=1e-12)
         np.testing.assert_allclose(m["rev_hat_ref"], m["rev_hat_live"], rtol=1e-12)
+
+
+class TestLiveCheckCompare(unittest.TestCase):
+    """live_check.compare 를 합성 기록으로 확인 (실제 기록에는 실행하지 않음)."""
+
+    def _rec(self):
+        return pd.DataFrame({"entity_id": "X", "fiscal_quarter": "2026Q3",
+                             "model_id": ["B2", "M4:combo", "B2:excovid", "M4:combo:excovid"],
+                             "g_hat": [0.10, 0.20, 0.10, 0.05], "rev_base": 100.0, "rev_hat": [110.5, 122.1, 110.5, 105.1],
+                             "nsur": [1.0, 2.0, 1.0, 0.5], "nsur_mom": 1.0, "nsur_drv": [0.0, 1.0, 0.0, -0.5],
+                             "delta": 5.0, "sigma": 10.0})
+
+    def test_waiting(self):
+        c = live_check.compare(self._rec(), None)
+        self.assertTrue((c["status"] == "대기").all())
+
+    def test_compare(self):
+        c = live_check.compare(self._rec(), 120.0).set_index("model_id")
+        g = np.log(1.2)
+        self.assertAlmostEqual(c.loc["M4:combo", "err"], 0.20 - g)
+        self.assertTrue(c.loc["M4:combo", "better_than_B2"])                 # |0.2-0.182| < |0.1-0.182|
+        self.assertFalse(c.loc["M4:combo:excovid", "better_than_B2"])        # excovid 는 B2:excovid 와 비교
+        self.assertAlmostEqual(c.loc["B2", "sur"], (120 - 100 - 5) / 10)
+        self.assertTrue(c.loc["M4:combo", "sign_drv_eq_sur_minus_mom"])      # drv +1, SUR - mom = 0.5
+        self.assertIsNone(c.loc["B2", "sign_drv_eq_sur_minus_mom"])
 
 
 if __name__ == "__main__":
