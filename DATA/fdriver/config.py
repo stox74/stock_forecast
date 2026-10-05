@@ -4,6 +4,8 @@
 - DB 접속 정보와 API 키는 DATA/config.py, DATA/KEYS.py 에서만 가져온다 (이 파일에 쓰지 않음).
 - RELEASE_RULES: 원천별 발표 시점(available_at) 규칙. 검증 결과에 따라 이 딕셔너리만 고친다.
 """
+import os
+from pathlib import Path
 from typing import Dict
 
 FD_TABLE_PREFIX = "fd_"
@@ -172,3 +174,30 @@ BULK_LOAD: Dict[str, object] = {
         # "kr_tourism_visitors_monthly": ["2026-10-01", "2026-10-03"],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# 분석 산출물 위치 (git 저장소 밖)
+#
+# 그림·표·실행된 노트북·점검 결과는 모두 OUTPUT_ROOT 아래에 둔다. 코드에 경로를 직접 쓰지 않는다.
+# 환경변수 FDRIVER_OUTPUT_ROOT 로 덮어쓸 수 있다.
+#   OUTPUT_ROOT/stage1_pilot/v1, v2/{figures, tables, pilot_vN_executed.ipynb}
+#   OUTPUT_ROOT/checks/step1, step2, step3, step4 ...
+# ---------------------------------------------------------------------------
+DEFAULT_OUTPUT_ROOT = r"C:\Users\82108\OneDrive\INVESTMENT\한국주식\fdriver"
+
+
+def output_root() -> Path:
+    """FDRIVER_OUTPUT_ROOT 가 있으면 그 값, 없으면 DEFAULT_OUTPUT_ROOT. 호출할 때마다 다시 읽는다."""
+    return Path(os.environ.get("FDRIVER_OUTPUT_ROOT") or DEFAULT_OUTPUT_ROOT)
+
+
+OUTPUT_ROOT = output_root()   # import 시점 값 (참고용). 코드에서는 output_path() 를 쓴다.
+
+
+def output_path(*parts: str, mkdir: bool = True) -> Path:
+    """OUTPUT_ROOT 아래 폴더 경로. mkdir=True 면 없을 때 만든다."""
+    p = output_root().joinpath(*parts)
+    if mkdir:
+        p.mkdir(parents=True, exist_ok=True)
+    return p

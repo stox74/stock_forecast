@@ -1,3 +1,7 @@
 # DB password / API keys: keep local only
 /config.py
 /KEYS.py
+
+# fdriver analysis outputs live under OUTPUT_ROOT (outside git)
+fdriver/pilots/figures*/
+fdriver/pilots/output*/
