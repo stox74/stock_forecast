@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 
 from .. import asof, db
+from .. import events as events_mod
+from ..config import Q4_CHECK_KNOWN_CASES, Q4_WARN_RATIO
 from ._common import as_list, date_range_params, empty_frame, finalize, require_str_codes
 
 log = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ REPRT_QUARTER = {"11013": 1, "11012": 2, "11014": 3, "11011": 4}
 DG_REVENUE_ITEM = "M000904001"   # 매출액(천원)
 DG_UNIT_MULTIPLIER = 1000.0
 DIFF_WARN_THRESHOLD = 0.01       # DART 와 DG 차이 1% 초과 시 경고
+Q4_CHECK_THRESHOLD = 0.10        # 4분기 점검: 잠정 4분기와 10% 초과 차이
 
 
 # ---------------------------------------------------------------- pure conversion
@@ -175,11 +178,22 @@ def _read_dg(ids) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- public
 def read_revenue(entity_ids: Iterable[str], start=None, end=None, basis: str = "consolidated",
-                 return_meta: bool = False):
+                 return_meta: bool = False, release: str = "events", vintage: bool = False):
     """분기 단독 매출 (원). return_meta=True 면 (df, meta) 를 돌려준다.
 
-    meta = {"compare": DART 와 DG 를 같은 분기에서 비교한 표, "warnings": [문자열...], "fs_div": 연도별 연결/별도}
+    meta = {"compare": DART 와 DG 를 같은 분기에서 비교한 표, "warnings": [문자열...], "fs_div": 연도별 연결/별도,
+            "first_disclosure": 분기별 첫 공시일, "q4_check": 4분기 점검표}
+
+    release (2a 명세서 3절 발표일 규칙)
+      "events"   (기본) 실제 첫 공시일(fd_earnings_event) -> 없으면 법정 기한, 휴장일이면 다음 거래일 (C)
+      "legal_v1" 1단계 원래 규칙 (법정 기한, 휴장일 미반영). 1단계 결과 재현용
+    vintage
+      False (기본) 분기당 한 행, 값은 확정치 (1단계와 같은 값)
+      True  잠정값(asof_note 'vintage:prelim') 행과 확정값('vintage:final') 행을 함께 돌려준다
+    4분기 점검에 걸린 분기와 그 다음 해 4분기는 asof_note 에 'q4_check:...' 가 붙는다 (q4_exclusions).
     """
+    if release not in ("events", "legal_v1"):
+        raise ValueError("release must be 'events' or 'legal_v1'")
     if basis not in ("consolidated", "separate"):
         raise ValueError("basis must be 'consolidated' or 'separate'")
     ids = sorted(set(require_str_codes(as_list(entity_ids), "entity_ids")))
@@ -248,11 +262,180 @@ def read_revenue(entity_ids: Iterable[str], start=None, end=None, basis: str = "
         "unit": "KRW",
         "currency": "KRW",
         "source": best["source"],
-    })
+    }).reset_index(drop=True)
     is_annual = out["period_end"].dt.month == out["key"].map(lambda k: fye.get(k, 12))
-    stamped = pd.concat([
-        asof.stamp(out[~is_annual], "revenue_quarter"),
-        asof.stamp(out[is_annual], "revenue_annual"),
-    ])
+
+    if release == "legal_v1":
+        # 1단계 원래 규칙 (법정 기한, 휴장일 미반영) 재현
+        stamped = pd.concat([asof.stamp(out[~is_annual], "revenue_quarter_legal_v1"),
+                             asof.stamp(out[is_annual], "revenue_annual_legal_v1")])
+        df = finalize(stamped)
+        return (df, meta) if return_meta else df
+
+    _ensure_trading_calendar()
+    stamped = pd.concat([asof.stamp(out[~is_annual], "revenue_quarter"),
+                         asof.stamp(out[is_annual], "revenue_annual")]).sort_index()
+    ev = events_mod.read_events(ids)
+    fd = events_mod.first_disclosure(ev, fye)
+    meta["first_disclosure"] = fd
+    stamped = _apply_first_disclosure(stamped, fd)
+    q4 = q4_check(stamped, fd, fye) if basis == "consolidated" else pd.DataFrame()
+    meta["q4_check"] = q4
+    stamped = _apply_q4_flags(stamped, q4)
+    if vintage:
+        stamped = _vintage_rows(stamped, fd, ev, fye)
     df = finalize(stamped)
     return (df, meta) if return_meta else df
+
+
+# ---------------------------------------------------------------- 2a: 발표일 규칙, vintage, 4분기 점검
+def _ensure_trading_calendar():
+    if asof._TRADING_DAYS is None:
+        from .price import trading_calendar
+        trading_calendar(register=True)
+
+
+def _is_fiscal_q4(df: pd.DataFrame, fye: dict, key_col: str = "key") -> pd.Series:
+    return df["period_end"].dt.month == df[key_col].map(lambda k: fye.get(k, 12))
+
+
+def _apply_first_disclosure(stamped: pd.DataFrame, fd: pd.DataFrame) -> pd.DataFrame:
+    """3절 발표일 규칙 1: 실제 첫 공시일이 있으면 그 날짜와 등급(A, prelim_sep 만 있으면 B)."""
+    out = stamped.reset_index(drop=True).copy()
+    if fd.empty:
+        return out
+    m = out[["key", "period_end"]].merge(fd.rename(columns={"entity_id": "key"}), on=["key", "period_end"], how="left")
+    has = m["first_dt"].notna().values
+    out.loc[has, "available_at"] = m.loc[has, "first_dt"].values
+    out.loc[has, "asof_quality"] = m.loc[has, "grade"].values
+    out.loc[has, "asof_note"] = ("first:" + m.loc[has, "first_type"]).values
+    return out
+
+
+def q4_check(stamped: pd.DataFrame, fd: pd.DataFrame, fye: dict,
+             threshold: float = None) -> pd.DataFrame:
+    """'연간 - 1~3분기' 4분기 매출 점검 (2a 명세서 v3 3절). 값은 대체하지 않는다.
+
+    flagged  잠정 4분기(연결)와 10% 넘게 다르거나 4분기 값이 음수          -> 표시만 (q4_check:flagged)
+    warn     4분기 값이 같은 해 1~3분기 평균의 3배 이상 또는 1/3 이하       -> 표시만 (q4_check:warn)
+    excluded config.Q4_CHECK_KNOWN_CASES 의 확인된 사례                    -> 자동 제외 (q4_check:excluded,
+             그 분기를 전년 동기로 쓰는 다음 해 4분기는 q4_check:yoy_base)
+    참고 열 q4_from_pl_change: 연간 손익구조변경 공시값 - 1~3분기 (판정에는 쓰지 않음)
+    """
+    threshold = Q4_CHECK_THRESHOLD if threshold is None else threshold
+    v = stamped[["key", "period_end", "value", "source"]].reset_index(drop=True)
+    q4 = v[_is_fiscal_q4(v, fye)]
+    fdi = fd.set_index(["entity_id", "period_end"]) if not fd.empty else None
+    rows = []
+    for r in q4.itertuples():
+        prelim = plv = np.nan
+        if fdi is not None and (r.key, r.period_end) in fdi.index:
+            f = fdi.loc[(r.key, r.period_end)]
+            prelim = float(f["prelim_value"]) if pd.notna(f["prelim_value"]) else np.nan
+            plv = float(f["pl_change_value"]) if pd.notna(f["pl_change_value"]) else np.nan
+        q123 = v[(v["key"] == r.key) & (v["period_end"] < r.period_end)
+                 & (v["period_end"] > r.period_end - pd.DateOffset(months=12))]["value"]
+        implied = plv - q123.sum() if not np.isnan(plv) and len(q123) == 3 else np.nan
+        diff = r.value / prelim - 1 if not np.isnan(prelim) and prelim != 0 else np.nan
+        reasons = []
+        if r.value < 0:
+            reasons.append("negative")
+        if not np.isnan(diff) and abs(diff) > threshold:
+            reasons.append(f"vs_prelim {diff:+.1%}")
+        q123_mean = q123.mean() if len(q123) == 3 else np.nan
+        ratio = r.value / q123_mean if q123_mean and not np.isnan(q123_mean) and q123_mean > 0 else np.nan
+        warn = bool(not np.isnan(ratio) and (ratio >= Q4_WARN_RATIO or ratio <= 1.0 / Q4_WARN_RATIO))
+        if warn:
+            reasons.append(f"q4/q1-3 mean {ratio:.2f}")
+        known = r.period_end in [pd.Timestamp(x) for x in Q4_CHECK_KNOWN_CASES.get(r.key, [])]
+        if known:
+            reasons.append("known_case (config.Q4_CHECK_KNOWN_CASES)")
+        rows.append({"entity_id": r.key, "period_end": r.period_end, "q4_derived": r.value, "q4_prelim": prelim,
+                     "diff_vs_prelim": diff, "q4_over_q123_mean": ratio, "q4_from_pl_change": implied,
+                     "source": r.source,
+                     "flagged": bool(r.value < 0 or (not np.isnan(diff) and abs(diff) > threshold)),
+                     "warn": warn, "excluded": known, "reason": "; ".join(reasons)})
+    return pd.DataFrame(rows)
+
+
+def _apply_q4_flags(stamped: pd.DataFrame, q4: pd.DataFrame) -> pd.DataFrame:
+    """asof_note 표시: flagged / warn (표시만), excluded (+ 다음 해 4분기 yoy_base, 자동 제외)."""
+    if q4.empty or not (q4["flagged"] | q4["warn"] | q4["excluded"]).any():
+        return stamped
+    out = stamped.copy()
+    for r in q4[q4["flagged"] | q4["warn"] | q4["excluded"]].itertuples():
+        nxt = (r.period_end + pd.DateOffset(years=1)) + pd.offsets.MonthEnd(0)
+        tags = []
+        if r.flagged:
+            tags.append((r.period_end, "q4_check:flagged"))
+        if r.warn:
+            tags.append((r.period_end, "q4_check:warn"))
+        if r.excluded:
+            tags += [(r.period_end, "q4_check:excluded"), (nxt, "q4_check:yoy_base")]
+        for pe, tag in tags:
+            m = (out["key"] == r.entity_id) & (out["period_end"] == pe)
+            out.loc[m, "asof_note"] = [";".join(x for x in (str(n), tag) if x and x != "nan")
+                                       for n in out.loc[m, "asof_note"].fillna("")]
+    return out
+
+
+def q4_exclusions(df: pd.DataFrame) -> pd.Series:
+    """추정·평가에서 뺄 분기: 확인된 사례(q4_check:excluded)와 그 다음 해 4분기(q4_check:yoy_base)만.
+    flagged / warn 은 표시만 하고 빼지 않는다 (2a 명세서 v3 3절)."""
+    note = df["asof_note"].fillna("")
+    return note.str.contains("q4_check:excluded") | note.str.contains("q4_check:yoy_base")
+
+
+def _vintage_rows(stamped: pd.DataFrame, fd: pd.DataFrame, ev: pd.DataFrame, fye: dict) -> pd.DataFrame:
+    """3절 규칙 4: 잠정값(잠정 공시일)과 확정값(정기보고서일)을 따로 돌려준다.
+
+    - prelim: 연결 잠정 매출. 4분기에 연결 잠정이 없고 손익구조변경 연간값이 있으면 연간 - 1~3분기 확정값
+      (그 기업의 손익구조변경이 모두 개별·별도 기준이면 개별도 허용, 연결이 하나라도 있으면 연결만)
+    - final: 확정값. available_at = 정기보고서 첫 접수일(A), 없으면 규칙 날짜(C). 그 분기 첫 공시일보다 이르지 않게.
+    asof_note: 'vintage:prelim' / 'vintage:final' (+ 4분기 점검 표시). as_of 뒤 asof.latest_known 으로 시점 값.
+    """
+    base = stamped.reset_index(drop=True)
+    if fd.empty:
+        fd = pd.DataFrame(columns=["entity_id", "period_end", "first_dt", "prelim_dt", "prelim_value", "periodic_dt",
+                                   "pl_change_dt", "pl_change_value"])
+    m = base[["key", "period_end"]].merge(fd.rename(columns={"entity_id": "key"}), on=["key", "period_end"], how="left")
+    q4_notes = base["asof_note"].fillna("").map(lambda n: ";".join(x for x in n.split(";") if x.startswith("q4_check:")))
+    is_q4 = _is_fiscal_q4(base, fye)
+
+    rule_dt = pd.Series(pd.NaT, index=base.index, dtype="datetime64[ns]")
+    if (~is_q4).any():
+        rule_dt[~is_q4] = asof.rule_dates(base.loc[~is_q4, "period_end"], "revenue_quarter").values
+    if is_q4.any():
+        rule_dt[is_q4] = asof.rule_dates(base.loc[is_q4, "period_end"], "revenue_annual").values
+    final = base.copy()
+    per = pd.to_datetime(m["periodic_dt"])
+    final["available_at"] = per.where(per.notna(), rule_dt).values
+    final["asof_quality"] = np.where(per.notna(), "A", "C")
+    first = pd.to_datetime(m["first_dt"])
+    early = (first.notna() & (pd.to_datetime(final["available_at"]) < first)).values
+    final.loc[early, "available_at"] = first[early].values
+    final["asof_note"] = ["vintage:final" + (";" + n if n else "") for n in q4_notes]
+
+    pl_fs = ev[ev["event_type"] == "pl_change"].groupby("entity_id")["fs_type"].agg(lambda s: set(s.dropna()))
+    pre = []
+    for i in base.index:
+        r, row = base.loc[i], m.loc[i]
+        val = dt = None
+        src = ""
+        if pd.notna(row.get("prelim_value")) and pd.notna(row.get("prelim_dt")):
+            val, dt = row["prelim_value"], row["prelim_dt"]
+        elif is_q4[i] and pd.notna(row.get("pl_change_value")):
+            fs = pl_fs.get(r["key"], set())
+            ok = ("연결" in fs) or (bool(fs) and fs <= {"개별", "별도"})
+            q123 = base[(base["key"] == r["key"]) & (base["period_end"] < r["period_end"])
+                        & (base["period_end"] > r["period_end"] - pd.DateOffset(months=12))]["value"]
+            if ok and len(q123) == 3:
+                val, dt, src = row["pl_change_value"] - q123.sum(), row["pl_change_dt"], ";from_pl_change"
+        if val is None:
+            continue
+        p = r.copy()
+        p["value"], p["available_at"], p["asof_quality"] = val, dt, "A"
+        p["asof_note"] = "vintage:prelim" + src + (";" + q4_notes[i] if q4_notes[i] else "")
+        p["source"] = events_mod.T_EVENT
+        pre.append(p)
+    return pd.concat([final, pd.DataFrame(pre)], ignore_index=True) if pre else final

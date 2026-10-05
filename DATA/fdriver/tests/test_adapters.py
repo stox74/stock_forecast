@@ -160,7 +160,8 @@ class TestAdaptersOnDB(unittest.TestCase):
             self.assertAlmostEqual(s.sum() / a, 1.0, places=9)
 
     def test_revenue_asof_rules(self):
-        df = read_revenue(["005930"], start="2025-01-01", end="2025-12-31")
+        # 1단계 원래 규칙 재현 (2a 기본값은 실제 공시일: tests/test_events_2a.py)
+        df = read_revenue(["005930"], start="2025-01-01", end="2025-12-31", release="legal_v1")
         got = dict(zip(df["period_end"], df["available_at"]))
         self.assertEqual(got[pd.Timestamp("2025-03-31")], pd.Timestamp("2025-05-15"))
         self.assertEqual(got[pd.Timestamp("2025-12-31")], pd.Timestamp("2026-03-31"))

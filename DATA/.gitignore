@@ -1,7 +1,37 @@
 # DB password / API keys: keep local only
+# DB password / API keys: keep local only
 /config.py
 /KEYS.py
 
 # fdriver analysis outputs live under OUTPUT_ROOT (outside git)
 fdriver/pilots/figures*/
 fdriver/pilots/output*/
+
+# Images
+*.png
+*.PNG
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+
+# Excel / CSV
+*.xlsx
+*.XLSX
+*.xls
+*.XLS
+*.xlsm
+*.xlsb
+*.csv
+*.CSV
+~$*
+
+# Documents / text
+*.md
+*.txt
+*.doc
+*.docx
+
+# Python cache
+__pycache__/
+*.pyc

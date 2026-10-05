@@ -14,7 +14,7 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 
-from .config import RELEASE_RULES, ASOF_GRADES
+from .config import RELEASE_RULES, RELEASE_CALENDARS, ASOF_GRADES
 
 DateLike = Union[str, pd.Timestamp, "np.datetime64"]
 
@@ -51,9 +51,36 @@ def _to_dates(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s, errors="coerce").dt.normalize()
 
 
+def roll_to_trading_day(dates: pd.Series) -> pd.Series:
+    """휴장일이면 다음 거래일로 민다 (거래일이면 그대로). 달력 범위 밖은 주말만 민다."""
+    d = pd.to_datetime(dates)
+    weekend_roll = d.map(lambda x: pd.offsets.BDay().rollforward(x) if pd.notna(x) else x)
+    if _TRADING_DAYS is None or len(_TRADING_DAYS) == 0:
+        return pd.Series(pd.to_datetime(weekend_roll.values), index=d.index)
+    arr = d.to_numpy(dtype="datetime64[ns]")
+    pos = np.searchsorted(_TRADING_DAYS, arr, side="left")
+    in_range = (arr >= _TRADING_DAYS[0]) & (pos < len(_TRADING_DAYS))
+    picked = _TRADING_DAYS[np.clip(pos, 0, len(_TRADING_DAYS) - 1)]
+    out = np.where(in_range, picked, pd.to_datetime(weekend_roll.values).to_numpy(dtype="datetime64[ns]"))
+    return pd.Series(out, index=d.index).astype("datetime64[ns]")
+
+
+def _calendar_lookup(period_end: pd.Series, name: str) -> pd.Series:
+    """공표 일정표에서 자료월의 발표일을 찾는다 (없으면 NaT)."""
+    cal = RELEASE_CALENDARS[name]
+    keys = period_end.dt.strftime("%Y-%m")
+    return pd.to_datetime(keys.map(cal), errors="coerce")
+
+
 def _apply_lag(period_end: pd.Series, lag: dict) -> pd.Series:
+    if "calendar" in lag:
+        hit = _calendar_lookup(period_end, lag["calendar"])
+        return hit.where(hit.notna(), _apply_lag(period_end, lag["fallback"]))
     if "days" in lag:
-        return period_end + pd.to_timedelta(lag["days"], unit="D")
+        out = period_end + pd.to_timedelta(lag["days"], unit="D")
+        if lag.get("roll") == "next_trading_day":
+            out = roll_to_trading_day(out)
+        return out
     if "bdays" in lag:
         return _add_bdays(period_end, lag["bdays"])
     if "next_month_day" in lag:
@@ -61,6 +88,20 @@ def _apply_lag(period_end: pd.Series, lag: dict) -> pd.Series:
         # 기간말이 1일인 경우에도 MonthBegin(1)은 다음 달 1일을 준다
         return first_next + pd.to_timedelta(lag["next_month_day"] - 1, unit="D")
     raise ValueError(f"unknown lag spec: {lag}")
+
+
+def _calendar_hits(pe: pd.Series, lag: dict, fq: Optional[pd.Series]) -> pd.Series:
+    """규칙 날짜가 공표 일정표에서 온 행이면 True."""
+    hits = pd.Series(False, index=pe.index)
+    if "by_freq" not in lag:
+        if "calendar" in lag:
+            hits = _calendar_lookup(pe, lag["calendar"]).notna()
+        return hits
+    for f, sub in lag["by_freq"].items():
+        if "calendar" in sub and fq is not None:
+            m = fq == f
+            hits.loc[m] = _calendar_lookup(pe[m], sub["calendar"]).notna()
+    return hits
 
 
 def rule_dates(period_end: pd.Series, rule_name: str,
@@ -97,6 +138,7 @@ def resolve(period_end: pd.Series, rule_name: str,
     """기간말·관측일로 available_at, asof_quality, asof_note 를 정한다.
 
     - 관측일이 없거나(NaT) 백필로 판정되면 규칙 날짜 + rule_grade
+      (규칙 날짜가 공표 일정표에서 왔으면 calendar_grade)
     - 그 외에는 관측일 + observed_grade
     - 단, 관측일이 bulk_dates(일괄 적재일)에 있으면 관측일 + B, asof_note = 'bulk_load'
     """
@@ -107,6 +149,11 @@ def resolve(period_end: pd.Series, rule_name: str,
 
     avail = rd.copy()
     grade = pd.Series(rule["rule_grade"], index=pe.index, dtype=object)
+    if "calendar_grade" in rule:
+        fq = None
+        if freq is not None:
+            fq = pd.Series(freq, index=pe.index) if np.isscalar(freq) else pd.Series(freq).reset_index(drop=True)
+        grade = grade.where(~_calendar_hits(pe, rule["lag"], fq), rule["calendar_grade"])
     kind = rule.get("observed")
 
     if kind == "period_end":

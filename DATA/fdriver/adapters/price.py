@@ -14,6 +14,9 @@ FIELDS = {
 }
 # 하루에 이 수 이상 종목이 있어야 거래일로 본다 (부분 적재일 제외)
 MIN_CODES_PER_DAY = 100
+# 거래일 달력 보완용 지수 (market_index.KOSPI)
+INDEX_TABLE = "kr_stock_index_daily"
+INDEX_FOR_CALENDAR = "YAHOO:^KS11"
 
 
 def read_price(entity_ids: Iterable[str], start=None, end=None,
@@ -45,13 +48,19 @@ def read_price(entity_ids: Iterable[str], start=None, end=None,
 
 
 def trading_calendar(start=None, end=None, register: bool = True) -> pd.DatetimeIndex:
-    """KSE_Price 에서 거래일 목록을 만든다. register=True 면 asof 의 영업일 계산에 등록."""
+    """KSE_Price 와 코스피 지수 날짜로 거래일 목록을 만든다. register=True 면 asof 의 영업일 계산에 등록."""
     s, e = date_range_params(start, end)
     df = db.read_sql(
         "SELECT `date` FROM `KSE_Price` WHERE `date` BETWEEN :s AND :e GROUP BY `date` HAVING COUNT(*) >= :m",
         {"s": s, "e": e, "m": MIN_CODES_PER_DAY},
     )
-    days = pd.DatetimeIndex(pd.to_datetime(df["date"])).sort_values()
+    days = pd.DatetimeIndex(pd.to_datetime(df["date"]))
+    # KSE_Price 는 2013-05-21 부터라, 그 이전과 빠진 날은 코스피 지수 날짜로 보탠다 (2010-01-04 ~)
+    if db.table_exists(INDEX_TABLE):
+        ix = db.read_sql(f"SELECT `period_end` FROM `{INDEX_TABLE}` WHERE `idx_name` = :n AND `period_end` BETWEEN :s AND :e",
+                         {"n": INDEX_FOR_CALENDAR, "s": s, "e": e})
+        days = days.union(pd.DatetimeIndex(pd.to_datetime(ix["period_end"])))
+    days = days.sort_values()
     if register:
         asof.set_trading_calendar(days)
     return days
