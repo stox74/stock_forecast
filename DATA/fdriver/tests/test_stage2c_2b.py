@@ -114,5 +114,53 @@ class TestReplaceEntities(unittest.TestCase):
             rg.replace_entities(["005930"], lambda e: {}, Path(tempfile.mkdtemp()))
 
 
+class TestV4FillRule(unittest.TestCase):
+    """명세서 2c v4: 수집기 목록 코드는 행 없는 달을 수집기 마지막 달까지 0, 끊긴 코드 제외는 목록 밖 코드에만."""
+
+    def _raw(self, code, months, value):
+        pe = pd.to_datetime(months) + pd.offsets.MonthEnd(0)
+        return pd.DataFrame({"key": code, "period_end": pe, "freq": "M", "item": "expDlr", "value": value,
+                             "unit": "USD", "currency": "USD", "available_at": pe + pd.Timedelta(days=15),
+                             "asof_quality": "C", "asof_note": "", "source": "t"})
+
+    def test_collector_code_zero_filled_to_last_month(self):
+        raw = pd.concat([self._raw("111111", ["2026-05", "2026-06", "2026-07", "2026-08"], 10.0),
+                         self._raw("890590", ["2026-05"], 3.0)])            # 목록 코드, 2026-06 이후 행 없음
+        leaves = pd.DataFrame({"leaf": ["111111", "890590"], "status": ["listed", "listed"]})
+        s = dv.segment_series(leaves, "seg", raw, fill_to=END, fill_codes=frozenset({"111111", "890590"}))
+        self.assertEqual(s["end"], END)
+        self.assertEqual(list(s["df"]["value"]), [13.0, 10.0, 10.0, 10.0])
+        self.assertEqual(s["zero_filled"], 3)
+
+    def test_month_with_no_rows_kept_as_zero(self):
+        raw = self._raw("890610", ["2026-05", "2026-07"], 5.0)
+        leaves = pd.DataFrame({"leaf": ["890610"], "status": ["listed"]})
+        s = dv.segment_series(leaves, "seg", raw, fill_to=END, fill_codes=frozenset({"890610"}))
+        df = s["df"]
+        self.assertEqual(list(df["value"]), [5.0, 0.0, 5.0, 0.0])
+        z = df[df["period_end"] == T("2026-08-31")].iloc[0]
+        self.assertEqual(z["available_at"], T("2026-09-15"))
+        self.assertEqual(z["asof_note"], "zero_filled")
+
+    def test_non_collector_code_still_truncates_without_fill(self):
+        raw = pd.concat([self._raw("111111", ["2026-05", "2026-06", "2026-07", "2026-08"], 10.0),
+                         self._raw("222222", ["2026-05", "2026-06"], 1.0)])     # 목록 밖
+        leaves = pd.DataFrame({"leaf": ["111111", "222222"], "status": ["listed", "listed"]})
+        s = dv.segment_series(leaves, "seg", raw, fill_to=END, fill_codes=frozenset({"111111"}))
+        self.assertEqual(s["end"], T("2026-06-30"))
+
+    def test_cut_exclusion_only_outside_collector(self):
+        inv = _inv([("111111", "2007-01-31", "2026-08-31", 236), ("890590", "2007-01-31", "2026-07-31", 232),
+                    ("222222", "2007-01-31", "2025-07-31", 223)])
+        res = _res([("A", "s1", "111111", False, "111111", "listed"), ("A", "s1", "890590", False, "890590", "listed"),
+                    ("A", "s1", "222222", False, "222222", "listed")])
+        out, _ = dv.apply_2b_rules(res, inv, END, collector=frozenset({"111111", "890590"}))
+        self.assertEqual(sorted(out["leaf"].dropna()), ["111111", "890590"])
+        self.assertEqual(list(out["dropped_leaf"].dropna()), ["222222"])
+        # collector 를 주지 않으면 2b 규칙 그대로 (890590 도 제외)
+        out2, _ = dv.apply_2b_rules(res, inv, END)
+        self.assertEqual(sorted(out2["leaf"].dropna()), ["111111"])
+
+
 if __name__ == "__main__":
     unittest.main()

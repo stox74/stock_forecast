@@ -92,6 +92,12 @@ def resolve_codes(mapping: Optional[Dict] = None, inv: Optional[pd.DataFrame] = 
     return out
 
 
+def collector_codes() -> frozenset:
+    """수집기 코드 목록 (DATA/hs_code_map_v2.HS_CODE_MAP)."""
+    from DATA.hs_code_map_v2 import HS_CODE_MAP
+    return frozenset(HS_CODE_MAP)
+
+
 # ---------------------------------------------------------------- 2c 작업 2b 규칙 (명세서 2c v3 4절 결정 1·2·3)
 DATA_END = pd.Timestamp("2026-08-31")      # 2b 수집 끝 달
 EXPAND_MIN_RATIO = 0.9
@@ -107,13 +113,14 @@ def expansion_ratio(hs: str, kids: List[str]) -> Optional[float]:
     return float(r.median()) if len(r) else None
 
 
-def apply_2b_rules(resolved: pd.DataFrame, inv: pd.DataFrame, end: pd.Timestamp = DATA_END):
+def apply_2b_rules(resolved: pd.DataFrame, inv: pd.DataFrame, end: pd.Timestamp = DATA_END, collector=None):
     """쓸 코드 다시 정하기. 반환 (새 resolved, 전개 비율 표).
 
     1. 전개 비율: 6자리 전개 = Y 인 4자리마다 비율 중앙값. 0.9 이상 -> 6자리 전개. 0.9 미만이고 4자리가 end 까지 있음 ->
        4자리로 바꿈 ('four_digit_switch'). 0.9 미만이고 4자리도 끊김 -> 6자리 유지, expand_short = True.
     2. 끊긴 코드: leaf 마지막 달 < end (RETIRED_BY 이전 종료 코드 제외) -> 그 leaf 를 뺌 ('cut_dropped', leaf = None).
     3. LS ELECTRIC 변압기(자회사) 세그먼트는 쓰지 않음 ('ls_transformer_excluded').
+    collector (명세서 v4): 수집기 목록 코드 집합. 주면 2번은 목록에 없는 코드에만 적용한다.
     """
     r = resolved.copy()
     r["expand_short"] = False
@@ -145,6 +152,8 @@ def apply_2b_rules(resolved: pd.DataFrame, inv: pd.DataFrame, end: pd.Timestamp 
     r["leaf_last"] = [x["last"] if x is not None else pd.NaT for x in li]
     r["leaf_months"] = [x["n_months"] if x is not None else 0 for x in li]
     cut = r["leaf"].notna() & (r["leaf_last"] < end) & (r["leaf_last"] > RETIRED_BY) & ~r["status"].eq("camera_splice_pre")
+    if collector is not None:   # 명세서 v4: 끊긴 코드 제외는 수집기 목록에 없는 코드에만
+        cut &= ~r["leaf"].isin(collector)
     r.loc[cut, "rule_note"] = [f"끊긴 코드 (마지막 {d:%Y-%m}) 제외" for d in r.loc[cut, "leaf_last"]]
     r.loc[cut, "status"] = "cut_dropped"
     r["dropped_leaf"] = np.where(cut, r["leaf"], None)
@@ -171,8 +180,13 @@ def camera_splice(raw: pd.DataFrame) -> pd.DataFrame:
     return raw[pre | post]
 
 
-def segment_series(leaves: pd.DataFrame, key: str, raw: Optional[pd.DataFrame] = None) -> Dict:
-    """leaf 코드 표 -> 월 합계 (COMMON_COLUMNS) 와 진단 정보."""
+def segment_series(leaves: pd.DataFrame, key: str, raw: Optional[pd.DataFrame] = None,
+                   fill_to: Optional[pd.Timestamp] = None, fill_codes=frozenset()) -> Dict:
+    """leaf 코드 표 -> 월 합계 (COMMON_COLUMNS) 와 진단 정보.
+
+    fill_to (명세서 2c v4 자료 규칙): 수집기의 마지막 수집 달. fill_codes(수집기 목록 코드)는 원천에 행이 없는 달을
+    fill_to 까지 0 으로 채운다 (그 코드의 끝 달 = fill_to). 이때 세그먼트 기간 안의 모든 달을 남긴다.
+    fill_to 가 없으면 작업 2 규칙 (끝 달 = 코드별 마지막 달 중 가장 이른 달)."""
     codes = sorted(set(leaves["leaf"].dropna()))
     raw = _monthly(codes) if raw is None else raw[raw["key"].isin(codes)]
     if raw.empty:
@@ -183,6 +197,8 @@ def segment_series(leaves: pd.DataFrame, key: str, raw: Optional[pd.DataFrame] =
     else:
         last = {}
     lastm = raw.groupby("key")["period_end"].max().to_dict()
+    if fill_to is not None:
+        lastm.update({c: max(v, fill_to) for c, v in lastm.items() if c in fill_codes and v > RETIRED_BY})
     lastm.update(last)
     active = {c: v for c, v in lastm.items() if v > RETIRED_BY}
     end = min(active.values()) if active else max(lastm.values())
@@ -198,6 +214,8 @@ def segment_series(leaves: pd.DataFrame, key: str, raw: Optional[pd.DataFrame] =
         span = piv.index >= first[c]
         if c in last:
             span &= piv.index <= last[c]
+        elif fill_to is not None and c not in fill_codes:
+            span &= piv.index <= lastm[c]
         zero += int(piv.loc[span, c].isna().sum())
     val = piv.fillna(0.0).sum(axis=1)
     has = piv.notna().any(axis=1)
@@ -207,7 +225,13 @@ def segment_series(leaves: pd.DataFrame, key: str, raw: Optional[pd.DataFrame] =
                        "unit": "USD", "currency": "USD", "available_at": av.max(axis=1).values,
                        "asof_quality": q.values, "asof_note": note.fillna("").values,
                        "source": "korea_monthly_trade_data"})
-    df = df[has.values]
+    if fill_to is None:
+        df = df[has.values]
+    else:                       # 0 으로 채운 달: 수출입 규칙 날짜(기간말 +15일), 등급 C
+        miss = df["available_at"].isna()
+        df.loc[miss, "available_at"] = df.loc[miss, "period_end"] + pd.Timedelta(days=15)
+        df.loc[miss, "asof_quality"] = "C"
+        df.loc[miss, "asof_note"] = "zero_filled"
     return {"df": finalize(df), "codes": codes, "start": start, "end": end, "end_by": end_by, "zero_filled": zero,
             "n_months": len(df)}
 
@@ -254,7 +278,8 @@ def camera_check() -> Dict:
 
 
 # ---------------------------------------------------------------- 기업별 드라이버
-def build_entity(entity_id: str, mapping: Dict, resolved: pd.DataFrame, camera_use: bool = True) -> Dict:
+def build_entity(entity_id: str, mapping: Dict, resolved: pd.DataFrame, camera_use: bool = True,
+                 fill_to: Optional[pd.Timestamp] = None, fill_codes=frozenset()) -> Dict:
     """기업 하나의 드라이버 자료. 반환: segments {key: segment_series 결과}, weighted, dropped(드라이버 없음 처리 사유)."""
     w = mapping["weights"][mapping["weights"]["entity_id"] == entity_id]
     res = resolved[(resolved["entity_id"] == entity_id) & resolved["leaf"].notna()]
@@ -263,7 +288,7 @@ def build_entity(entity_id: str, mapping: Dict, resolved: pd.DataFrame, camera_u
         return out
     raw = _monthly(sorted(res["leaf"].unique()))
     if w.empty:
-        out["segments"]["all"] = segment_series(res, "all", raw)
+        out["segments"]["all"] = segment_series(res, "all", raw, fill_to, fill_codes)
         return out
     for seg in w["segment"]:
         row = w[w["segment"] == seg].iloc[0]
@@ -277,7 +302,7 @@ def build_entity(entity_id: str, mapping: Dict, resolved: pd.DataFrame, camera_u
         if leaves.empty:
             out["dropped"][seg] = "남는 코드 없음 -> 드라이버 없음"
             continue
-        out["segments"][seg] = segment_series(leaves, seg, raw)
+        out["segments"][seg] = segment_series(leaves, seg, raw, fill_to, fill_codes)
     return out
 
 

@@ -41,7 +41,7 @@ def fingerprint(exclude=()) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def replace_entities(ids, compute, backup_dir):
+def replace_entities(ids, compute, backup_dir, suffix: str = ""):
     """ids 기업의 fd_nowcast 행을 백업(처음 한 번) -> 전부 계산 -> 그 기업 행만 지우고 다시 넣는다.
     compute(entity_id) -> {"rows": DataFrame}. 시범 기업이 있으면 멈춘다. 반환 (백업, 결과, 지운 수, 쓴 수)."""
     ids = list(ids)
@@ -50,7 +50,7 @@ def replace_entities(ids, compute, backup_dir):
         raise RuntimeError(f"재생성 대상 오류 (시범 기업 {bad} 또는 빈 목록)")
     old = {}
     for e in ids:
-        f = backup_dir / f"backup_fd_nowcast_{e}.csv"
+        f = backup_dir / f"backup_fd_nowcast_{e}{suffix}.csv"
         if f.exists():            # 처음 백업(작업 2 행)을 덮어쓰지 않는다. 전후 비교도 그 백업 기준
             old[e] = pd.read_csv(f, dtype={"entity_id": str})
         else:

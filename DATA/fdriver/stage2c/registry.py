@@ -18,14 +18,17 @@ from . import segments as sg
 from .mapping import read_mapping
 
 _CACHE: Dict = {}
-RULES = ("step2", "2b")      # step2: 작업 2 정의 / 2b: 작업 2b 규칙 (끊긴 코드 제외, 전개 비율 0.9, LS 변압기 제외)
+RULES = ("step2", "2b", "2b2")
+# step2: 작업 2 정의 / 2b: 작업 2b 규칙 (끊긴 코드 제외, 전개 비율 0.9, LS 변압기 제외)
+# 2b2: 명세서 2c v4 자료 규칙 (세그먼트 끝 달 = 수집기 마지막 수집 달, 수집기 목록 코드는 행 없는 달 0,
+#      끊긴 코드 제외는 목록 밖 코드에만)
 
 
 class NoDriverSegments(RuntimeError):
     """2b 규칙 적용 후 수출 드라이버 세그먼트가 모두 없어진 기업 (지시문 2b (c)1: 보고하고 멈춤)."""
 
 
-def build(refresh: bool = False, rules: str = "2b") -> Dict:
+def build(refresh: bool = False, rules: str = "2b2") -> Dict:
     if rules not in RULES:
         raise ValueError(rules)
     if _CACHE.get("rules") == rules and not refresh:
@@ -36,8 +39,13 @@ def build(refresh: bool = False, rules: str = "2b") -> Dict:
     resolved_step2 = dv.resolve_codes(m, inv)
     ratios = None
     resolved = resolved_step2
+    fill_to, fill_codes = None, frozenset()
     if rules == "2b":
         resolved, ratios = dv.apply_2b_rules(resolved_step2, inv)
+    elif rules == "2b2":
+        fill_codes = dv.collector_codes()
+        fill_to = inv["last"].max()                  # 수집기의 마지막 수집 달
+        resolved, ratios = dv.apply_2b_rules(resolved_step2, inv, end=fill_to, collector=fill_codes)
     cam = dv.camera_check()
     ids = list(m["companies"].loc[m["companies"]["included"], "entity_id"])
     w = m["weights"]
@@ -45,10 +53,10 @@ def build(refresh: bool = False, rules: str = "2b") -> Dict:
     filled = sg.fill_years(shares)
     built, specs, wfns = {}, {}, {}
     for e in ids:
-        b = dv.build_entity(e, m, resolved, camera_use=cam["use"])
+        b = dv.build_entity(e, m, resolved, camera_use=cam["use"], fill_to=fill_to, fill_codes=fill_codes)
         built[e] = b
         had_export = resolved_step2["entity_id"].eq(e).any()
-        if rules == "2b" and had_export and not b["segments"]:
+        if rules in ("2b", "2b2") and had_export and not b["segments"]:
             raise NoDriverSegments(f"{e}: 2b 규칙 후 드라이버 세그먼트가 없음 ({b['dropped']})")
         wf = None
         if b["weighted"] and len(b["segments"]) >= 2:
@@ -59,7 +67,7 @@ def build(refresh: bool = False, rules: str = "2b") -> Dict:
             wf = _single_active(wf, list(b["segments"]), start)
             wfns[e] = wf
         specs[e] = dv.specs_for(e, b, wf)
-    _CACHE.update({"rules": rules, "resolved_step2": resolved_step2, "expansion_ratios": ratios,
+    _CACHE.update({"rules": rules, "fill_to": fill_to, "resolved_step2": resolved_step2, "expansion_ratios": ratios,
                    "mapping": m, "inventory": inv, "resolved": resolved, "camera": cam, "built": built,
                    "shares": shares, "rows": rows, "filled": filled, "specs": specs, "weight_fns": wfns})
     return _CACHE
@@ -77,7 +85,7 @@ def _single_active(wf, segs, start: Optional[Dict]):
     return weights
 
 
-def register(refresh: bool = False, rules: str = "2b") -> Dict:
+def register(refresh: bool = False, rules: str = "2b2") -> Dict:
     b = build(refresh, rules)
     from .. import entity
     for e, sp in b["specs"].items():
