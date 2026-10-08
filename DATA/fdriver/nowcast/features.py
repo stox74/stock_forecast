@@ -39,6 +39,9 @@ class DriverSpec:
     transform: str = "log_yoy"
     alt: Optional[str] = None     # 결과 확인 후 추가한 변형 이름 (예: "krw"). 주 모델·주 M2 에는 넣지 않는다
     replaces: Optional[str] = None  # 변형 M2 를 만들 때 이 변형이 대신하는 주 드라이버 model_id
+    # 2c 변경 (명세서 2c v2 4절): 세그먼트 가중평균. weights(분기 j, 기준일 t) -> {세그먼트(key): 가중치}.
+    # 있으면 특징값 = Σ w_s·g_s / Σ w_s (w_s > 0 인 세그먼트, g_s = 세그먼트 key 의 로그 YoY). 하나라도 없으면 None.
+    weights: Optional[Callable[[pd.Timestamp, object], Dict[str, float]]] = field(default=None, repr=False)
 
 
 def _trade(code: str) -> Callable[[], pd.DataFrame]:
@@ -184,6 +187,24 @@ def _log_yoy(a, b):
     return float(np.log(a) - np.log(b))
 
 
+def _feature(spec: DriverSpec, known: pd.DataFrame, j: pd.Timestamp, dq: pd.Timestamp, t,
+             positions: Optional[Sequence[int]]):
+    """분기 j (드라이버 분기 dq) 의 로그 YoY. 세그먼트 가중치가 있으면 세그먼트별 YoY 의 가중평균 (2c 변경)."""
+    if spec.weights is None:
+        return _log_yoy(_level(known, dq, spec.kind, positions), _level(known, quarter_shift(dq, 4), spec.kind, positions))
+    w = {s: v for s, v in spec.weights(j, t).items() if v and v > 0}
+    if not w:
+        return None
+    num = 0.0
+    for s, v in w.items():
+        ks = known[known["key"] == s]
+        g = _log_yoy(_level(ks, dq, spec.kind, positions), _level(ks, quarter_shift(dq, 4), spec.kind, positions))
+        if g is None:
+            return None
+        num += v * g
+    return float(num / sum(w.values()))
+
+
 def target_feature(spec: DriverSpec, drv: pd.DataFrame, q: pd.Timestamp, t,
                    known: Optional[pd.DataFrame] = None) -> Dict:
     """예측 분기 q 의 기준일 t 특징값. 반환: x, coverage, positions, driver_quarter, inputs(사용한 행).
@@ -203,9 +224,7 @@ def target_feature(spec: DriverSpec, drv: pd.DataFrame, q: pd.Timestamp, t,
         out["coverage"] = min(1.0, g["period_end"].nunique() / days)
     else:
         out["coverage"] = 1.0 if (g["period_end"] == dq).any() else 0.0
-    cur = _level(known, dq, spec.kind, out["positions"])
-    prev = _level(known, quarter_shift(dq, 4), spec.kind, out["positions"])
-    out["x"] = _log_yoy(cur, prev)
+    out["x"] = _feature(spec, known, q, dq, t, out["positions"])
     used = known[known["qend"].isin([dq, quarter_shift(dq, 4)])]
     if spec.kind == "M":
         used = used[used["pos"].isin(out["positions"])]
@@ -219,8 +238,7 @@ def training_features(spec: DriverSpec, drv: pd.DataFrame, quarters: Sequence[pd
     known = known_at(drv, t) if known is None else known
     vals = {}
     for j in quarters:
-        dj = quarter_shift(j, spec.lag)
-        vals[j] = _log_yoy(_level(known, dj, spec.kind, positions), _level(known, quarter_shift(dj, 4), spec.kind, positions))
+        vals[j] = _feature(spec, known, j, quarter_shift(j, spec.lag), t, positions)
     return pd.Series(vals, dtype="float64")
 
 

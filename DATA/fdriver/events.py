@@ -240,20 +240,81 @@ def doc_text(rcept_no: str, cache: Path) -> str:
     else:
         return "__ERROR__ 020 retry exhausted"
     z = zipfile.ZipFile(io.BytesIO(r.content))
-    raw = z.read(z.namelist()[0])
-    t = None
-    for enc in ("utf-8", "cp949", "euc-kr"):
-        try:
-            t = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    t = re.sub(r"<[^>]+>", " ", t or "")
-    t = re.sub(r"\.xforms[^{]*\{[^}]*\}", " ", t).replace("&nbsp;", " ")
-    t = re.sub(r"\s+", " ", t).strip()
+    name, rule, files = pick_main_file(z, rcept_no)
+    _log_zip_choice(cache, rcept_no, name, rule, files)
+    t = clean_text(_decode(z.read(name)))
     f.write_text(t, encoding="utf-8")
     time.sleep(0.2)
     return t
+
+
+# ---------------------------------------------------------------- zip 본문 고르기 (2c 작업 2 수정)
+# document.xml zip 에는 본문 외에 감사보고서·검토보고서가 함께 들어 있을 수 있고 순서가 일정하지 않다
+# (사업보고서: <접수번호>.xml 본문, _00760.xml 감사보고서, _00761.xml 연결감사보고서). 예전에는 첫 파일을 읽었다.
+ATTACHED_DOC_TITLE = re.compile(r"감사보고서|검토보고서|감사인")
+ZIP_LOG = "_zip_choice.csv"
+
+
+def _decode(raw: bytes) -> str:
+    for enc in ("utf-8", "cp949", "euc-kr"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+def clean_text(t: str) -> str:
+    t = re.sub(r"<[^>]+>", " ", t or "")
+    t = re.sub(r"\.xforms[^{]*\{[^}]*\}", " ", t).replace("&nbsp;", " ")
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def zip_titles(z: zipfile.ZipFile) -> List[Dict]:
+    """zip 안 파일마다 이름, 크기, 문서 제목(<DOCUMENT-NAME>, 없으면 None)."""
+    out = []
+    for n in z.namelist():
+        head = _decode(z.read(n)[:4000])
+        m = re.search(r"<DOCUMENT-NAME[^>]*>([^<]*)<", head)
+        out.append({"name": n, "size": z.getinfo(n).file_size, "title": m.group(1).strip() if m else None})
+    return out
+
+
+def pick_main_file(z: zipfile.ZipFile, rcept_no: str):
+    """본문 파일 고르기. 반환: (파일명, 판별 규칙, 파일 목록).
+
+    1) 파일이 하나면 그 파일 ('single')
+    2) '<접수번호>.xml' 이 있으면 그 파일 ('rcept_no_name')
+    3) 이름에 '_' 꼬리가 없는 파일이 하나뿐이면 그 파일 ('no_suffix')
+    4) 문서 제목이 감사·검토보고서가 아닌 파일이 하나뿐이면 그 파일 ('title')
+    5) 판별 실패: 감사·검토보고서가 아닌 파일 중 가장 큰 것 ('fallback_largest', 경고 + 파일 목록 기록)
+    """
+    files = zip_titles(z)
+    names = [f["name"] for f in files]
+    if len(names) == 1:
+        return names[0], "single", files
+    if f"{rcept_no}.xml" in names:
+        return f"{rcept_no}.xml", "rcept_no_name", files
+    plain = [n for n in names if "_" not in Path(n).stem]
+    if len(plain) == 1:
+        return plain[0], "no_suffix", files
+    main = [f for f in files if not (f["title"] and ATTACHED_DOC_TITLE.search(f["title"]))]
+    if len(main) == 1:
+        return main[0]["name"], "title", files
+    pool = main or files
+    name = max(pool, key=lambda f: f["size"])["name"]
+    log.warning("DART zip %s: 본문 판별 실패, 가장 큰 파일 %s 사용. 파일 목록: %s", rcept_no, name,
+                [(f["name"], f["size"], f["title"]) for f in files])
+    return name, "fallback_largest", files
+
+
+def _log_zip_choice(cache: Path, rcept_no: str, name: str, rule: str, files: List[Dict]) -> None:
+    """고른 파일과 전체 파일 목록을 캐시 폴더의 _zip_choice.csv 에 덧붙인다."""
+    f = cache / ZIP_LOG
+    row = pd.DataFrame([{"rcept_no": rcept_no, "chosen": name, "rule": rule, "n_files": len(files),
+                         "files": " | ".join(f"{x['name']}:{x['size']}:{x['title'] or ''}" for x in files),
+                         "logged_at": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}])
+    row.to_csv(f, mode="a", header=not f.exists(), index=False, encoding="utf-8-sig")
 
 
 # ---------------------------------------------------------------- 이벤트표 만들기
