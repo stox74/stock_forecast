@@ -92,9 +92,76 @@ def resolve_codes(mapping: Optional[Dict] = None, inv: Optional[pd.DataFrame] = 
     return out
 
 
+# ---------------------------------------------------------------- 2c 작업 2b 규칙 (명세서 2c v3 4절 결정 1·2·3)
+DATA_END = pd.Timestamp("2026-08-31")      # 2b 수집 끝 달
+EXPAND_MIN_RATIO = 0.9
+
+
+def expansion_ratio(hs: str, kids: List[str]) -> Optional[float]:
+    """6자리 합 / 4자리 비율의 중앙값 (4자리 값이 있는 달). 4자리나 6자리가 없으면 None."""
+    four = read_trade([hs], items=["expDlr"]).set_index("period_end")["value"]
+    if four.empty or not kids:
+        return None
+    ks = read_trade(kids, items=["expDlr"]).groupby("period_end")["value"].sum().reindex(four.index).fillna(0.0)
+    r = (ks / four).replace([np.inf, -np.inf], np.nan).dropna()
+    return float(r.median()) if len(r) else None
+
+
+def apply_2b_rules(resolved: pd.DataFrame, inv: pd.DataFrame, end: pd.Timestamp = DATA_END):
+    """쓸 코드 다시 정하기. 반환 (새 resolved, 전개 비율 표).
+
+    1. 전개 비율: 6자리 전개 = Y 인 4자리마다 비율 중앙값. 0.9 이상 -> 6자리 전개. 0.9 미만이고 4자리가 end 까지 있음 ->
+       4자리로 바꿈 ('four_digit_switch'). 0.9 미만이고 4자리도 끊김 -> 6자리 유지, expand_short = True.
+    2. 끊긴 코드: leaf 마지막 달 < end (RETIRED_BY 이전 종료 코드 제외) -> 그 leaf 를 뺌 ('cut_dropped', leaf = None).
+    3. LS ELECTRIC 변압기(자회사) 세그먼트는 쓰지 않음 ('ls_transformer_excluded').
+    """
+    r = resolved.copy()
+    r["expand_short"] = False
+    r["rule_note"] = ""
+    ratios = []
+    for hs in sorted(r.loc[r["expand6"] & (r["hs"].str.len() == 4), "hs"].unique()):
+        g = r[r["hs"] == hs]
+        kids = sorted(g.loc[g["status"] == "expanded", "leaf"].dropna().unique())
+        ratio = expansion_ratio(hs, kids)
+        four_last = inv.loc[hs, "last"] if hs in inv.index else pd.NaT
+        decision = "expanded"
+        if ratio is not None and ratio < EXPAND_MIN_RATIO:
+            decision = "four_digit_switch" if (pd.notna(four_last) and four_last >= end) else "expand_short"
+        ratios.append({"hs": hs, "entities": ",".join(sorted(set(g["entity_id"]))), "children": ",".join(kids),
+                       "n_children": len(kids), "ratio_median": ratio,
+                       "four_last": four_last.strftime("%Y-%m") if pd.notna(four_last) else None, "decision": decision})
+        if decision == "four_digit_switch":
+            keep = []
+            for (eid, seg), gg in g.groupby(["entity_id", "segment"]):
+                row = gg.iloc[0].to_dict()
+                row.update(leaf=hs, status="four_digit_switch", rule_note=f"비율 {ratio:.3f} < 0.9, 4자리 사용")
+                keep.append(row)
+            r = pd.concat([r[r["hs"] != hs], pd.DataFrame(keep)], ignore_index=True)
+        elif decision == "expand_short":
+            r.loc[r["hs"] == hs, "expand_short"] = True
+            r.loc[r["hs"] == hs, "rule_note"] = f"전개 부족 (비율 {ratio:.3f}, 4자리도 끊김)"
+    li = r["leaf"].map(lambda c: inv.loc[c] if isinstance(c, str) and c in inv.index else None)
+    r["leaf_first"] = [x["first"] if x is not None else pd.NaT for x in li]
+    r["leaf_last"] = [x["last"] if x is not None else pd.NaT for x in li]
+    r["leaf_months"] = [x["n_months"] if x is not None else 0 for x in li]
+    cut = r["leaf"].notna() & (r["leaf_last"] < end) & (r["leaf_last"] > RETIRED_BY) & ~r["status"].eq("camera_splice_pre")
+    r.loc[cut, "rule_note"] = [f"끊긴 코드 (마지막 {d:%Y-%m}) 제외" for d in r.loc[cut, "leaf_last"]]
+    r.loc[cut, "status"] = "cut_dropped"
+    r["dropped_leaf"] = np.where(cut, r["leaf"], None)
+    r.loc[cut, "leaf"] = None
+    ls = (r["entity_id"] == LS_TRANSFORMER["entity_id"]) & (r["segment"] == LS_TRANSFORMER["segment"])
+    r.loc[ls, "dropped_leaf"] = r.loc[ls, "leaf"]
+    r.loc[ls, ["leaf", "status", "rule_note"]] = [None, "ls_transformer_excluded", "명세서 v3 결정 3: 변압기(자회사) 쓰지 않음"]
+    return r.sort_values(["entity_id", "segment", "hs", "leaf"], na_position="last").reset_index(drop=True), pd.DataFrame(ratios)
+
+
 # ---------------------------------------------------------------- 세그먼트 시계열
+DATA_START = pd.Timestamp("2007-01-31")    # 드라이버 자료 시작 (수집 범위 2007-01~). 2b 재수집 때 수집기가 YoY 계산용으로
+                                           # 2006년 12개월을 함께 넣어, 일부 코드만 있는 2006 달이 생기지 않게 자른다.
+
+
 def _monthly(codes: List[str]) -> pd.DataFrame:
-    return read_trade(codes, items=["expDlr"]) if codes else pd.DataFrame()
+    return read_trade(codes, items=["expDlr"], start=DATA_START) if codes else pd.DataFrame()
 
 
 def camera_splice(raw: pd.DataFrame) -> pd.DataFrame:

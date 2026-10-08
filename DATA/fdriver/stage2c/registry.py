@@ -18,14 +18,26 @@ from . import segments as sg
 from .mapping import read_mapping
 
 _CACHE: Dict = {}
+RULES = ("step2", "2b")      # step2: 작업 2 정의 / 2b: 작업 2b 규칙 (끊긴 코드 제외, 전개 비율 0.9, LS 변압기 제외)
 
 
-def build(refresh: bool = False) -> Dict:
-    if _CACHE and not refresh:
+class NoDriverSegments(RuntimeError):
+    """2b 규칙 적용 후 수출 드라이버 세그먼트가 모두 없어진 기업 (지시문 2b (c)1: 보고하고 멈춤)."""
+
+
+def build(refresh: bool = False, rules: str = "2b") -> Dict:
+    if rules not in RULES:
+        raise ValueError(rules)
+    if _CACHE.get("rules") == rules and not refresh:
         return _CACHE
+    _CACHE.clear()
     m = read_mapping()
     inv = dv.code_inventory()
-    resolved = dv.resolve_codes(m, inv)
+    resolved_step2 = dv.resolve_codes(m, inv)
+    ratios = None
+    resolved = resolved_step2
+    if rules == "2b":
+        resolved, ratios = dv.apply_2b_rules(resolved_step2, inv)
     cam = dv.camera_check()
     ids = list(m["companies"].loc[m["companies"]["included"], "entity_id"])
     w = m["weights"]
@@ -35,6 +47,9 @@ def build(refresh: bool = False) -> Dict:
     for e in ids:
         b = dv.build_entity(e, m, resolved, camera_use=cam["use"])
         built[e] = b
+        had_export = resolved_step2["entity_id"].eq(e).any()
+        if rules == "2b" and had_export and not b["segments"]:
+            raise NoDriverSegments(f"{e}: 2b 규칙 후 드라이버 세그먼트가 없음 ({b['dropped']})")
         wf = None
         if b["weighted"] and len(b["segments"]) >= 2:
             we = w[w["entity_id"] == e]
@@ -44,7 +59,8 @@ def build(refresh: bool = False) -> Dict:
             wf = _single_active(wf, list(b["segments"]), start)
             wfns[e] = wf
         specs[e] = dv.specs_for(e, b, wf)
-    _CACHE.update({"mapping": m, "inventory": inv, "resolved": resolved, "camera": cam, "built": built,
+    _CACHE.update({"rules": rules, "resolved_step2": resolved_step2, "expansion_ratios": ratios,
+                   "mapping": m, "inventory": inv, "resolved": resolved, "camera": cam, "built": built,
                    "shares": shares, "rows": rows, "filled": filled, "specs": specs, "weight_fns": wfns})
     return _CACHE
 
@@ -61,9 +77,10 @@ def _single_active(wf, segs, start: Optional[Dict]):
     return weights
 
 
-def register(refresh: bool = False) -> Dict:
-    b = build(refresh)
+def register(refresh: bool = False, rules: str = "2b") -> Dict:
+    b = build(refresh, rules)
+    from .. import entity
     for e, sp in b["specs"].items():
-        if e not in ft.DRIVER_SPECS or not ft.DRIVER_SPECS[e]:
+        if e not in entity.PILOTS:          # 2a 시범 기업 항목은 건드리지 않는다
             ft.DRIVER_SPECS[e] = sp
     return b
