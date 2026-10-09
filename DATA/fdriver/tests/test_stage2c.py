@@ -137,5 +137,27 @@ class TestParseRows(unittest.TestCase):
         self.assertEqual(sg.classify(rows[1]["label"], sg.RULES["051900"])[1], "생활용품")
 
 
+class TestMonthlyPrelim(unittest.TestCase):
+    """2c 작업 3 수정: 예전 서식 월간 공시는 분기 이벤트에서 뺀다 (기간 표기 '(2023년1월)' 등)."""
+
+    def _parse(self, text, dt="2023-02-01"):
+        return ev.parse_prelim(text, T(dt))
+
+    def test_monthly_labels_detected(self):
+        for body in ["구분(단위:대,%) 당기실적 (2023년1월) 전기실적 (2022년12월) 국내 51,503",
+                     "당기실적 전기실적 ('19년10월) ('19년9월) ('18년10월) 매출액 당해실적 - -",
+                     "당기실적 (2018.02월) (2018.01월) (2017.02월) 매출액 당해실적 591,638",
+                     "당기실적 ( 2012.9월) ( 2012.8월) (2011.9월) 매출액 당해실적 - -"]:
+            self.assertEqual(self._parse(body)["period_src"], "monthly_label", body)
+            self.assertLess(self._parse(body)["period_days"], ev.MIN_QUARTER_DAYS)
+
+    def test_quarterly_not_monthly(self):
+        q1 = "해당 기간 당 기: 2010년 3/4분기(2010.07.01-09.30) 매출액 당해실적 106,865"
+        q2 = "당 기: 2012년 1월 1일 ~ 2012년 3월 31일 매출액 당해실적 32,529 정보제공(예정)일시 2012년 4월 16일"
+        q3 = "실적기간 당기실적 2026-07-01 ~ 2026-09-30 매출액 당해실적 195.0"
+        for body in (q1, q2, q3):
+            self.assertNotEqual(self._parse(body)["period_src"], "monthly_label", body)
+
+
 if __name__ == "__main__":
     unittest.main()

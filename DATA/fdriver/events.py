@@ -44,6 +44,8 @@ UNIT = {"조원": 1e12, "억원": 1e8, "백만원": 1e6, "천원": 1e3, "원": 1
 EVENT_TYPES = ("prelim", "prelim_sep", "pl_change", "periodic")
 MIN_QUARTER_DAYS = 80          # 본문 실적기간이 이보다 짧으면 월 단위 공시로 보고 분기 이벤트에서 뺀다
 LEGACY_DOC_CACHE = ("stage2a", "checks", "step1", "docs_text")   # 사전 조사 때 받은 본문
+# 월간 공시의 실적 기간 표기: (2023년1월), ('19년10월), (2018.02월), ( 2012.9월)
+MONTHLY_LABEL = re.compile(r"\(\s*['’`]?\d{2,4}\s*(?:년|\.)\s*\d{1,2}\s*월\s*\)")
 
 DDL_EVENT = f"""
 CREATE TABLE IF NOT EXISTS `{T_EVENT}` (
@@ -156,6 +158,12 @@ def parse_prelim(t: str, rcept_dt: Optional[pd.Timestamp] = None) -> Dict:
                 y = y + 2000 if y < 100 else y
                 out["period_end"], out["period_src"] = _qend(y, int(mm.group(2))), "label"
                 break
+    if out["period_src"] in (None, "label") and MONTHLY_LABEL.search(t):
+        # 2c 작업 3 수정: 예전 서식 월간 공시(판매 대수·월 매출, '당기실적 (2023년1월)', "('19년10월)", '(2018.02월)')는
+        # 날짜 범위가 없어 접수일 직전 분기로 잡히던 것을 월 단위로 보고 뺀다.
+        out["period_src"], out["period_days"] = "monthly_label", 31
+        if out["period_end"] is None and rcept_dt is not None:
+            out["period_end"] = quarter_before(out["orig_filing_date"] or rcept_dt)
     if out["period_end"] is None and rcept_dt is not None:
         out["period_end"] = quarter_before(out["orig_filing_date"] or rcept_dt)
         out["period_src"] = "inferred_from_filing_date"
