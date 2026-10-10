@@ -108,5 +108,52 @@ class TestRecordStrict(unittest.TestCase):
         self.assertEqual(cur["g_M4"].tolist(), [0.1])
 
 
+class TestScorecardR2(unittest.TestCase):
+    """R2: 방향 적중 분할, nsur_drv 상·하위 1/3 수익률 차이, 기록 회차별 계산."""
+
+    def _c(self):
+        from DATA.fdriver.radar import scorecard as S
+        n = 9
+        return S, pd.DataFrame({
+            "status": ["비교"] * n, "grade": ["A"] * 6 + ["B"] * 3,
+            "nsur_drv": [-3, -2, -1, 0.5, 1, 2, -1, 0.2, 3.0],
+            "car_a": [-1.0, -2.0, -3.0, 0.0, 1.0, 5.0, -2.0, 0.0, 4.0],
+            "car_b": [0.0] * n,
+            "drv_hit": [True, False, True, True, np.nan, False, True, True, False],
+            "agree": ["일치", "불일치", "일치", "일치", "-", "불일치", "일치", "불일치", "일치"],
+            "err_M4": [0.1] * n, "err_E": [0.05] * n, "err_B2": [0.2] * n, "err_TS": [0.1] * n,
+            "err_consensus": [np.nan] * n, "shock_alert": [""] * 8 + ["경보(상)"],
+            "record_id": ["r1"] * 5 + ["r2"] * 4,
+            "asof_date": [T("2026-10-16")] * 5 + [T("2026-10-23")] * 4})
+
+    def test_tercile_spread(self):
+        S, c = self._c()
+        r = S.tercile_spread(c, "car_a")
+        # nsur_drv 정렬: 하위 3개 (-3,-2,-1 의 car -1,-2,-3 / 그리고 -1(B) -2.0) -> 9개 중 3개씩
+        self.assertEqual(r["n_each"], 3)
+        lo = c.sort_values("nsur_drv")["car_a"].iloc[:3].mean()
+        hi = c.sort_values("nsur_drv")["car_a"].iloc[-3:].mean()
+        self.assertAlmostEqual(r["spread"], hi - lo)
+        t = S.item3_returns(c)
+        self.assertEqual(set(t["group"]), {"전체", "A", "B"})
+        self.assertEqual(set(t["window"].str[0]), {"a", "b"})
+
+    def test_hit_splits(self):
+        S, c = self._c()
+        t = S.item1_hit(c)
+        all_ = t[t["split"] == "전체"].iloc[0]
+        self.assertEqual(all_["n"], 8)                     # drv_hit 결측 1개 제외
+        self.assertAlmostEqual(all_["drv_hit_rate"], 5 / 8)
+        agree = t[t["split"] == "M4·E 일치"].set_index("group")["n"].to_dict()
+        self.assertEqual(agree, {"일치": 5, "불일치": 3})    # '-' 는 빠짐
+
+    def test_by_record(self):
+        S, c = self._c()
+        sc = S.by_asof(c)
+        self.assertEqual(len(sc), 2)
+        self.assertTrue(any(k.startswith("2026-10-16") for k in sc))
+        self.assertEqual(int(sc[[k for k in sc if "r2" in k][0]]["1_hit"].iloc[0]["n"]), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

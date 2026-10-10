@@ -5,7 +5,7 @@
 2. nowcast 갱신: 2a nowcast_entity 로 M4, M1/M3(M2), B2 (+ B1, B3) 를 계산하고 radar.ts 로 TS, E 를 더한다.
    - 실적이 아직 없는 분기: 기준일 t (기본 오늘) 한 번 (checkpoint 'live').
    - 실적이 이미 있는 분기(시험용): 기업별 pre5 기준일 (nowcast 와 같은 checkpoints 규칙).
-3. 레이더 표 (기업당 한 행): 종목·업종·등급, 예상 매출(M4·E 원화 금액, 전년 대비 성장률), B2 성장률,
+3. 레이더 표 (기업당 한 행): 종목·업종·등급, 대표 예상 매출 E (원화 금액, 전년 대비 성장률), 보조 M4 예상, B2 성장률,
    nsur_drv 크기·방향, E 방향, 일치 여부, 충격 경보, 드라이버 최근 3개월 전년 대비, 경고, 예상 발표일, 컨센서스.
 4. 출력: radar/<분기>/radar_<분기>_<생성일시>.csv 와 .html (덮어쓰지 않음).
 
@@ -239,7 +239,7 @@ def entity_row(e: str, q: pd.Timestamp, t_live: Optional[pd.Timestamp], meta: Di
 
 
 COLUMNS = ["grade", "entity_id", "name", "sector", "fiscal_quarter", "mode", "asof_date", "main_model",
-           "rev_M4", "g_M4", "rev_E", "g_E", "g_B2", "g_TS", "g_M1", "M1_model", "E_components", "nsur_drv",
+           "rev_E", "g_E", "rev_M4", "g_M4", "g_B2", "g_TS", "g_M1", "M1_model", "E_components", "nsur_drv",
            "drv_direction", "E_direction", "agree", "shock_alert", "shock_x", "shock_p10", "shock_p90", "shock_n",
            "drv_3m_yoy", "drv_3m_last", "warnings", "announce_date", "announce_kind", "consensus", "consensus_asof",
            "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma"]
@@ -273,8 +273,9 @@ def build(quarter: str, asof_date=None) -> Dict:
 
 # ---------------------------------------------------------------- 4. 출력
 def to_html(tab: pd.DataFrame, title: str) -> str:
-    show = [("grade", "등급"), ("name", "기업"), ("sector", "업종"), ("asof_date", "기준일"), ("rev_M4", "M4 예상(조원)"),
-            ("g_M4", "M4 성장률"), ("rev_E", "E 예상(조원)"), ("g_E", "E 성장률"), ("g_B2", "B2 성장률"),
+    show = [("grade", "등급"), ("name", "기업"), ("sector", "업종"), ("asof_date", "기준일"),
+            ("rev_E", "예상 매출 E(조원)"), ("g_E", "E 성장률"), ("g_B2", "B2 성장률"),
+            ("rev_M4", "보조: M4 예상(조원)"), ("g_M4", "보조: M4 성장률"),
             ("nsur_drv", "nsur_drv"), ("drv_direction", "drv 방향"), ("E_direction", "E 방향"), ("agree", "일치"),
             ("shock_alert", "충격 경보"), ("drv_3m_yoy", "드라이버 3개월"), ("warnings", "경고"),
             ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"), ("consensus", "컨센서스(조원)")]
@@ -309,7 +310,8 @@ table{{border-collapse:collapse;font-size:12px;white-space:nowrap}} th,td{{borde
 th{{position:sticky;top:0;background:var(--bg)}} td:nth-child(-n+3),th:nth-child(-n+3){{text-align:left}}
 tr.alert td{{background:var(--alert)}} tr.mismatch td{{background:var(--mis)}} tr.alert.mismatch td{{background:var(--alert)}}
 </style></head><body><h1>{html.escape(title)}</h1>
-<p>등급별 정렬. 붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 (exp(g)-1). 등급은 표시용이며 계산에 쓰지 않음.</p>
+<p>등급별 정렬. 대표 예상 매출은 E (M1·B2·TS 동일 가중), M4 는 보조 열. 서프라이즈(nsur_drv)·충격 경보는 M4 기준.
+붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 (exp(g)-1). 등급은 표시용이며 계산에 쓰지 않음.</p>
 <div class="wrap"><table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table></div></body></html>"""
 
 
@@ -338,7 +340,7 @@ def main(argv=None):
     paths = save(res)
     pd.set_option("display.width", 250)
     print(paths)
-    print(res["table"][["grade", "name", "asof_date", "g_M4", "g_E", "g_B2", "nsur_drv", "agree", "shock_alert",
+    print(res["table"][["grade", "name", "asof_date", "g_E", "g_M4", "g_B2", "nsur_drv", "agree", "shock_alert",
                         "warnings", "announce_date"]].to_string(index=False))
 
 
