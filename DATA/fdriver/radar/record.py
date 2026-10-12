@@ -25,7 +25,7 @@ from . import build as B
 
 T_RECORD = "fd_live_record"
 RECORD_KEY = ["entity_id", "fiscal_quarter", "asof_date"]
-NUM_COLS = ["rev_M4", "g_M4", "rev_E", "g_E", "g_B2", "g_TS", "g_M1", "nsur_drv", "shock_x", "shock_p10", "shock_p90",
+NUM_COLS = ["rev_M4", "g_M4", "rev_E", "g_E", "g_B2", "g_TS", "g_M1", "rev_M1", "rev_B2", "rev_TS", "nsur_drv", "shock_x", "shock_p10", "shock_p90",
             "drv_3m_yoy", "consensus", "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma", "gap_E", "gap_M4"]
 STR_COLS = {"grade": 10, "name": 50, "sector": 30, "mode": 20, "main_model": 40, "M1_model": 40, "E_components": 80,
             "drv_direction": 4, "E_direction": 4, "agree": 10, "shock_alert": 40, "drv_3m_last": 7, "warnings": 120, "gap_agree": 10,

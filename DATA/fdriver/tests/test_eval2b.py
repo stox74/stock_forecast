@@ -175,6 +175,19 @@ class TestRadarConsensus(unittest.TestCase):
         self.assertIn("gap_M4", rec.NUM_COLS)
         self.assertIn("gap_agree", rec.STR_COLS)
         self.assertNotIn("c_latest", B.COLUMNS)
+        for c in ("rev_M1", "rev_B2", "rev_TS", "g_M1_pct", "g_B2_pct", "g_TS_pct"):
+            self.assertIn(c, B.COLUMNS)
+            self.assertTrue(B.COLUMN_DESC.get(c))
+        for c in ("rev_M1", "rev_B2", "rev_TS"):
+            self.assertIn(c, rec.NUM_COLS)
+        self.assertIn("기하평균", B.COLUMN_DESC["rev_E"])
+
+    def test_e_is_geometric_mean(self):
+        from DATA.fdriver.radar import ts
+        base, g = 100.0, {"M1:x": 0.2, "B2": -0.1, "TS": 0.05}
+        e = ts.ensemble(g["M1:x"], g["B2"], g["TS"], "M1:x")
+        revs = [base * np.exp(v) for v in g.values()]
+        self.assertAlmostEqual(base * np.exp(e["g_hat"]), float(np.prod(revs) ** (1 / 3)))
 
     def test_q4_fix_in_memory(self):
         from DATA.fdriver.eval2b import k3_fix_q4 as Q

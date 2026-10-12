@@ -24,6 +24,8 @@
 - 컨센서스 (2b, K3 고정): adapters.kr_consensus.read_consensus 로 대상 분기 매출 컨센서스 중 관측일 <= t 인 최신 값
   consensus(원)와 관측일 consensus_asof. 열 정의는 COLUMN_DESC (출력 때 radar_columns_*.csv 로 함께 저장).
   g_* 열은 로그 차분 ln(예상 / 전년 동기), *_pct 열은 단순 성장률 (%), gap_* 은 비율 (0.05 = 5%).
+- E 구성 예측 (K3 6): rev_M1, rev_B2, rev_TS = rev_base x exp(g_*) (원), g_M1_pct, g_B2_pct, g_TS_pct (%).
+  E = rev_base x exp(구성 요소 로그 성장률의 평균) = 세 예측(rev_M1, rev_B2, rev_TS)의 기하평균 (있는 것만).
 """
 import argparse
 import html
@@ -259,13 +261,15 @@ def consensus_cols(e: str, fq: str, t: pd.Timestamp, rev_E, rev_M4, rev_base=Non
 
 COLUMNS = ["grade", "entity_id", "name", "sector", "fiscal_quarter", "mode", "asof_date", "main_model",
            "rev_E", "g_E", "g_E_pct", "rev_M4", "g_M4", "g_M4_pct", "g_B2", "g_TS", "g_M1", "M1_model", "E_components",
+           "rev_M1", "rev_B2", "rev_TS", "g_M1_pct", "g_B2_pct", "g_TS_pct",
            "nsur_drv",
            "drv_direction", "E_direction", "agree", "shock_alert", "shock_x", "shock_p10", "shock_p90", "shock_n",
            "drv_3m_yoy", "drv_3m_last", "warnings", "announce_date", "announce_kind", "consensus", "consensus_asof",
            "g_C_pct", "gap_E", "gap_M4", "gap_dir", "gap_size", "gap_agree",
            "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma"]
 COLUMN_DESC = {
-    "rev_E": "대표 예상 매출 E (원). E = 드라이버 요소, B2, TS 동일 가중",
+    "rev_E": ("대표 예상 매출 E (원) = rev_base x exp((g_M1 + g_B2 + g_TS) / 3), 즉 세 구성 예측 rev_M1, rev_B2, rev_TS 의 "
+              "기하평균 (없는 요소는 빼고 남은 것의 평균, 대조군은 B2·TS)"),
     "g_E": "E 성장률, 로그 차분 ln(rev_E / rev_base)",
     "g_E_pct": "E 단순 성장률 (%) = (exp(g_E) - 1) x 100",
     "rev_M4": "보조: M4 예상 매출 (원)",
@@ -273,7 +277,14 @@ COLUMN_DESC = {
     "g_M4_pct": "M4 단순 성장률 (%)",
     "g_B2": "B2 (모멘텀 벤치마크) 성장률, 로그 차분",
     "g_TS": "TS (ETS, ARIMA 평균) 성장률, 로그 차분",
-    "g_M1": "M1 드라이버 모델 성장률, 로그 차분",
+    "g_M1": "E 의 드라이버 요소 성장률, 로그 차분 (모델은 M1_model: M1/M3 드라이버 1개, M2 드라이버 2개 이상)",
+    "M1_model": "E 의 드라이버 요소 모델 id",
+    "rev_M1": "E 의 드라이버 요소 예상 매출 (원) = rev_base x exp(g_M1)",
+    "rev_B2": "B2 예상 매출 (원) = rev_base x exp(g_B2)",
+    "rev_TS": "TS 예상 매출 (원) = rev_base x exp(g_TS)",
+    "g_M1_pct": "드라이버 요소 단순 성장률 (%) = (exp(g_M1) - 1) x 100",
+    "g_B2_pct": "B2 단순 성장률 (%)",
+    "g_TS_pct": "TS 단순 성장률 (%)",
     "nsur_drv": "2c M4 서프라이즈 신호 (레이더 주 신호)",
     "agree": "drv 방향(nsur_drv 부호)과 E 방향(sign(g_E - g_B2)) 일치",
     "consensus": "대상 분기 매출 컨센서스 (원), 관측일 <= 기준일 인 최신 값 (kr_revenue_consensus)",
@@ -307,8 +318,12 @@ def build(quarter: str, asof_date=None) -> Dict:
     for c in COLUMNS:
         if c not in tab:
             tab[c] = np.nan
-    tab["g_E_pct"] = (np.exp(pd.to_numeric(tab["g_E"], errors="coerce")) - 1) * 100
-    tab["g_M4_pct"] = (np.exp(pd.to_numeric(tab["g_M4"], errors="coerce")) - 1) * 100
+    base = pd.to_numeric(tab["rev_base"], errors="coerce")
+    for m in ("E", "M4", "M1", "B2", "TS"):
+        g = pd.to_numeric(tab[f"g_{m}"], errors="coerce")
+        tab[f"g_{m}_pct"] = (np.exp(g) - 1) * 100
+        if m in ("M1", "B2", "TS"):
+            tab[f"rev_{m}"] = base * np.exp(g)
     tab = tab[COLUMNS]
     tab["_o"] = tab["grade"].map(GRADE_ORDER)
     tab = tab.sort_values(["_o", "name"]).drop(columns="_o").reset_index(drop=True)
@@ -319,20 +334,22 @@ def build(quarter: str, asof_date=None) -> Dict:
 # ---------------------------------------------------------------- 4. 출력
 def to_html(tab: pd.DataFrame, title: str) -> str:
     show = [("grade", "등급"), ("name", "기업"), ("sector", "업종"), ("asof_date", "기준일"),
-            ("rev_E", "예상 매출 E(조원)"), ("g_E_pct", "E 성장률"), ("g_B2", "B2 성장률"),
-            ("rev_M4", "보조: M4 예상(조원)"), ("g_M4_pct", "보조: M4 성장률"),
+            ("rev_E", "예상 매출 E(조원)"), ("M1_model", "드라이버 모델"), ("rev_M1", "드라이버(조원)"),
+            ("rev_B2", "B2(조원)"), ("rev_TS", "TS(조원)"), ("rev_M4", "보조: M4(조원)"), ("consensus", "컨센서스(조원)"),
+            ("g_E_pct", "E 성장률"), ("g_M1_pct", "드라이버 성장률"), ("g_B2_pct", "B2 성장률"), ("g_TS_pct", "TS 성장률"),
+            ("g_M4_pct", "보조: M4 성장률"), ("g_C_pct", "컨센서스 성장률"),
             ("nsur_drv", "nsur_drv"), ("drv_direction", "drv 방향"), ("E_direction", "E 방향"), ("agree", "일치"),
             ("shock_alert", "충격 경보"), ("drv_3m_yoy", "드라이버 3개월"), ("warnings", "경고"),
-            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"), ("consensus", "컨센서스(조원)"),
-            ("consensus_asof", "컨센서스 관측일"), ("g_C_pct", "컨센서스 성장률"), ("gap_E", "차이 E-컨센"),
+            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"),
+            ("consensus_asof", "컨센서스 관측일"), ("gap_E", "차이 E-컨센"),
             ("gap_dir", "차이 방향"), ("gap_size", "차이 크기"), ("gap_M4", "보조: 차이 M4-컨센"), ("gap_agree", "M4·E 차이 일치")]
 
     def fmt(c, v):
         if v is None or (isinstance(v, float) and np.isnan(v)):
             return ""
-        if c in ("rev_M4", "rev_E", "consensus"):
+        if c in ("rev_M4", "rev_E", "consensus", "rev_M1", "rev_B2", "rev_TS"):
             return f"{v / 1e12:,.3f}"
-        if c in ("g_E_pct", "g_M4_pct", "g_C_pct"):
+        if c in ("g_E_pct", "g_M4_pct", "g_C_pct", "g_M1_pct", "g_B2_pct", "g_TS_pct"):
             return f"{v:+.1f}%"
         if c in ("g_M4", "g_E", "g_B2", "drv_3m_yoy"):
             return f"{(np.exp(v) - 1) * 100:+.1f}%"
@@ -361,7 +378,7 @@ table{{border-collapse:collapse;font-size:12px;white-space:nowrap}} th,td{{borde
 th{{position:sticky;top:0;background:var(--bg)}} td:nth-child(-n+3),th:nth-child(-n+3){{text-align:left}}
 tr.alert td{{background:var(--alert)}} tr.mismatch td{{background:var(--mis)}} tr.alert.mismatch td{{background:var(--alert)}}
 </style></head><body><h1>{html.escape(title)}</h1>
-<p>등급별 정렬. 대표 예상 매출은 E (M1·B2·TS 동일 가중), M4 는 보조 열. 서프라이즈(nsur_drv)·충격 경보는 M4 기준.
+<p>등급별 정렬. 대표 예상 매출은 E = 드라이버·B2·TS 세 예측의 기하평균 (로그 성장률 평균), M4 는 보조 열. 서프라이즈(nsur_drv)·충격 경보는 M4 기준.
 차이 = 예상 매출 / 최신 컨센서스 - 1 (2b 검증에서 Q2 미달로 주 신호는 nsur_drv 유지, 참고 열).
 붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 단순 성장률 (exp(g)-1).
 CSV 의 g_* 열은 로그 차분 ln(예상 / 전년 동기), *_pct 열이 단순 성장률(%). 차이 크기: 소 &lt; 2.44% &le; 중 &lt; 7.33% &le; 대.
