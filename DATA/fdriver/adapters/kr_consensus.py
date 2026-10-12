@@ -6,6 +6,9 @@ read_consensus(ticker, target_quarter, as_of, source="monthly"|"daily", strict=F
   가장 최근 값과 그 관측일. 억원 -> 원 (이벤트표 실제 매출 단위). 없으면 {"value": None, "asof": None}.
   - C_pre5  = read_consensus(t, q, pre5 기준일)                 (관측일 <= pre5)
   - C_final = read_consensus(t, q, 발표일, strict=True)          (관측일 < 발표일)
+read_consensus_after(ticker, target_quarter, announce_date, source="monthly")
+  발표 다음 달 안의 마지막 관측값과 관측일 (2b K2 C_final 정의: 발표 후 고정된 값 = 발표 직전 값.
+  2023 일별 원천의 발표 직전 값과 109/109 일치, 전월 말 값은 35% 일치). 없으면 {"value": None, "asof": None}.
 history(tickers, source): 관측 이력 전체 (한 번 읽어 여러 번 쓰기용). read_consensus 는 내부 캐시를 쓴다.
 테이블은 읽기만 한다 (복사본을 만들지 않음).
 """
@@ -62,3 +65,19 @@ def read_consensus(ticker: str, target_quarter, as_of, source: str = "monthly", 
 
 def clear_cache() -> None:
     _hist.cache_clear()
+
+
+def read_consensus_after(ticker: str, target_quarter, announce_date, source: str = "monthly") -> Dict:
+    out = {"value": None, "asof": None}
+    if announce_date is None or pd.isna(announce_date):
+        return out
+    h = _hist(str(ticker), source)
+    if h.empty:
+        return out
+    m0 = (pd.Timestamp(announce_date) + pd.offsets.MonthBegin(1)).normalize()
+    m1 = m0 + pd.offsets.MonthEnd(0)
+    x = h[(h["target_period_end"] == quarter_end(target_quarter)) & (h["asof_date"] >= m0) & (h["asof_date"] <= m1)]
+    if x.empty:
+        return out
+    r = x.iloc[-1]
+    return {"value": float(r["value"]), "asof": r["asof_date"]}

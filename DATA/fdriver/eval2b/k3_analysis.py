@@ -8,6 +8,7 @@
 - Q3: 판정 없음. 분기마다 신호 상위 1/3 - 하위 1/3 의 코스피 대비 CAR 차이를 구해 분기 평균.
   (c) 발표일 -3 ~ +3 거래일, 신호 = 실제 surprise. (a) pre5 다음 거래일 ~ 발표 다음 거래일, (b) 발표 +2 ~ +20 거래일, 신호 = gap_E.
   CAR 계산은 2c C3 와 같은 evaluate.event_study (excess_returns, car), 참고로 2c C3 형 고정효과 회귀(분기 군집)도 낸다.
+K2: fd_eval_2b 의 가장 최근 run 을 읽고 결과는 2b/k2_results (K1 결과는 2b/k1_results 그대로).
 실행: python -m DATA.fdriver.eval2b.k3_analysis
 """
 import json
@@ -23,7 +24,6 @@ from ..evaluate import event_study as es
 from ..stage2c.s3_lib import ALPHA, one_sided
 from . import k2_table
 
-OUT = output_path("2b", "k1_results")
 HIT_MIN = 0.55
 WINDOWS_Q3 = {"c": (-3, 3), "a": ("s+1", 1), "b": (2, 20)}
 
@@ -250,8 +250,9 @@ def _jsonable(x):
     return x
 
 
-def main():
-    d = k2_table.load()
+def main(run_id=None, out_name="k2_results"):
+    OUT = output_path("2b", out_name)
+    d = k2_table.load(run_id)
     from ..radar.universe import universe
     u = universe().set_index("entity_id")
     d["group"] = d["ticker"].map(u["group"])
@@ -271,7 +272,7 @@ def main():
     summ = {"Q1": {"reg_E": r1["reg_E"], "reg_M4": r1["reg_M4"], "firm": r1["firm_summary"]},
             "Q2": {"main": r2["main"], "rev_c": r2["rev_c"]},
             "Q3": {w: {k: v for k, v in r3[w].items() if k != "table"} for w in ("c", "a", "b")},
-            "decision": dec}
+            "decision": dec, "run_id": d["run_id"].iloc[0]}
     (OUT / "summary.json").write_text(json.dumps(_jsonable(summ), ensure_ascii=False, indent=1, default=str),
                                       encoding="utf-8")
     pd.set_option("display.width", 220)

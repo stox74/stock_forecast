@@ -7,8 +7,8 @@ compare(rec): fd_live_record 의 기록 행과 실제 첫 공시 값 비교 (2a 
   코스피 대비 누적 초과수익률 (2a event_study: KSE_Price prc_change - 코스피, 결측일 건너뜀, 구간 미완료면 NaN):
     car_a = 기준일 다음 거래일 ~ 발표 다음 거래일 (day +1),  car_b = 발표 2거래일 후 ~ 20거래일 (day +2 ~ +20).
     발표일(day 0) = 실제 첫 공시일 (휴장일이면 다음 거래일).
-2b 추가 (adapters.kr_consensus.read_consensus): c_pre5 = 관측일 <= 기록 기준일 인 최신 컨센서스, c_final = 관측일 < 실제 첫 공시일
-  인 최신 값. err_C_pre5, err_C_final = ln(값 / rev_base) - g_actual. gap_E = rev_E / c_pre5 - 1,
+2b 추가 (adapters.kr_consensus): c_pre5 = 관측일 <= 기록 기준일 인 최신 컨센서스, c_final = 발표 다음 달 마지막 관측값
+  (K2 정의, read_consensus_after. 발표 다음 달이 지나기 전에는 빈칸). err_C_pre5, err_C_final = ln(값 / rev_base) - g_actual. gap_E = rev_E / c_pre5 - 1,
   surprise_c = 실제 / c_final - 1, gap_hit = sign(gap_E) == sign(surprise_c) (둘 다 0 이 아닐 때).
 scorecard(compared): 성적표 1~5. 기록이 기준일별로 여러 번이면 by_asof() 로 기준일마다 따로 계산한다.
   1 방향 적중: sign(nsur_drv) == sign(SUR - nsur_mom) 비율 (nsur_drv != 0), gap_E 기준 적중률(gap_hit). 전체, 등급별,
@@ -97,7 +97,7 @@ def compare(rec: pd.DataFrame, with_returns: bool = True) -> pd.DataFrame:
 def consensus_check(r: Dict, actual: float, actual_dt, ga: float) -> Dict:
     e, fq, base = r["entity_id"], r["fiscal_quarter"], r["rev_base"]
     cp = kr_consensus.read_consensus(e, fq, r["asof_date"])["value"]
-    cf = kr_consensus.read_consensus(e, fq, actual_dt, strict=True)["value"] if actual_dt is not None and pd.notna(actual_dt) else None
+    cf = kr_consensus.read_consensus_after(e, fq, actual_dt)["value"]
     err = lambda v: (float(np.log(v) - np.log(base)) - ga) if v and v > 0 else np.nan
     rev_e = r.get("rev_E")
     gap = (float(rev_e) / cp - 1) if cp and rev_e is not None and pd.notna(rev_e) else np.nan
