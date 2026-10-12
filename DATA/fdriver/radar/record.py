@@ -26,7 +26,7 @@ from . import build as B
 T_RECORD = "fd_live_record"
 RECORD_KEY = ["entity_id", "fiscal_quarter", "asof_date"]
 NUM_COLS = ["rev_M4", "g_M4", "rev_E", "g_E", "g_B2", "g_TS", "g_M1", "nsur_drv", "shock_x", "shock_p10", "shock_p90",
-            "drv_3m_yoy", "consensus", "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma"]
+            "drv_3m_yoy", "consensus", "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma", "gap_E", "gap_M4"]
 STR_COLS = {"grade": 10, "name": 50, "sector": 30, "mode": 20, "main_model": 40, "M1_model": 40, "E_components": 80,
             "drv_direction": 4, "E_direction": 4, "agree": 10, "shock_alert": 40, "drv_3m_last": 7, "warnings": 120,
             "announce_kind": 60}
@@ -60,6 +60,16 @@ def ddl_live_like(table: str) -> str:
         f"fk_{live.T_LIVE}_entity", f"fk_{table}_entity")
 
 
+def ensure_columns(table: str = T_RECORD) -> list:
+    """이미 있는 기록 테이블에 NUM_COLS 의 새 열(2b: gap_E, gap_M4)이 없으면 NULL 허용 열로 추가한다.
+    기존 행의 값은 바뀌지 않는다 (새 열만 NULL)."""
+    have = set(db.read_sql(f"SELECT * FROM `{table}` LIMIT 0").columns)
+    add = [c for c in NUM_COLS if c not in have]
+    for c in add:
+        db.execute_fd_ddl(f"ALTER TABLE `{table}` ADD COLUMN `{c}` DOUBLE NULL")
+    return add
+
+
 def announced_before(table: pd.DataFrame, t_map: Dict[str, pd.Timestamp]) -> pd.DataFrame:
     """이미 첫 공시가 나온 기업: announce_kind '실제' 이고 그 날짜 <= 기준일."""
     x = table[(table["announce_kind"] == "실제")].copy()
@@ -73,6 +83,7 @@ def prepare_rows(res: Dict, version: str, record_id: str, exclude_announced: boo
     t_map = {e: pd.Timestamp(d) for e, d in zip(tab["entity_id"], tab["asof_date"])}
     done = announced_before(tab, t_map) if exclude_announced else tab.iloc[0:0][["entity_id", "name"]]
     tab = tab[~tab["entity_id"].isin(done["entity_id"])]
+    tab["consensus"], tab["consensus_asof"] = tab["c_latest"], tab["c_latest_asof"]   # 2b: 컨센서스 열 = c_latest
     rec = tab[RECORD_KEY + NUM_COLS + list(STR_COLS) + ["shock_n", "announce_date", "consensus_asof"]].copy()
     rec["record_id"], rec["code_version"] = record_id, version
     rec["shock_n"] = [int(x) if pd.notna(x) else None for x in pd.to_numeric(rec["shock_n"], errors="coerce")]
@@ -94,6 +105,7 @@ def record(quarter: str, asof_date=None, tables: Optional[Dict[str, str]] = None
     res = B.build(quarter, asof_date)
     rec, models, done = prepare_rows(res, version, record_id, exclude_announced)
     db.execute_fd_ddl(ddl_record(tables["record"]))
+    ensure_columns(tables["record"])
     db.execute_fd_ddl(ddl_live_like(tables["models"]) if tables["models"] != live.T_LIVE else live.DDL_LIVE)
     # 둘 다 먼저 키 충돌을 확인한 뒤 쓴다 (한쪽만 쓰이는 일이 없게)
     for df, tb, key in [(rec, tables["record"], RECORD_KEY), (models, tables["models"], live.KEY)]:

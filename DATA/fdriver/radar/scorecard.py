@@ -7,9 +7,13 @@ compare(rec): fd_live_record 의 기록 행과 실제 첫 공시 값 비교 (2a 
   코스피 대비 누적 초과수익률 (2a event_study: KSE_Price prc_change - 코스피, 결측일 건너뜀, 구간 미완료면 NaN):
     car_a = 기준일 다음 거래일 ~ 발표 다음 거래일 (day +1),  car_b = 발표 2거래일 후 ~ 20거래일 (day +2 ~ +20).
     발표일(day 0) = 실제 첫 공시일 (휴장일이면 다음 거래일).
+2b 추가 (adapters.kr_consensus.read_consensus): c_pre5 = 관측일 <= 기록 기준일 인 최신 컨센서스, c_final = 관측일 < 실제 첫 공시일
+  인 최신 값. err_C_pre5, err_C_final = ln(값 / rev_base) - g_actual. gap_E = rev_E / c_pre5 - 1,
+  surprise_c = 실제 / c_final - 1, gap_hit = sign(gap_E) == sign(surprise_c) (둘 다 0 이 아닐 때).
 scorecard(compared): 성적표 1~5. 기록이 기준일별로 여러 번이면 by_asof() 로 기준일마다 따로 계산한다.
-  1 방향 적중: sign(nsur_drv) == sign(SUR - nsur_mom) 비율 (nsur_drv != 0). 전체, 등급별, M4·E 일치/불일치별.
-  2 오차와 승률: M4·E·B2·TS·컨센서스의 평균 절대 로그 오차, RMSE / M4·E 의 B2 대비 승률.
+  1 방향 적중: sign(nsur_drv) == sign(SUR - nsur_mom) 비율 (nsur_drv != 0), gap_E 기준 적중률(gap_hit). 전체, 등급별,
+    M4·E 일치/불일치별.
+  2 오차와 승률: M4·E·B2·TS·컨센서스(기록 값)·C_pre5·C_final 의 평균 절대 로그 오차, RMSE / M4·E 의 B2 대비 승률.
   3 수익률: nsur_drv 상위 1/3 과 하위 1/3 기업의 평균 CAR 차이 (구간 a, b). 전체와 등급별 (나눔은 그 집합 안에서).
   4 충격 경보: 경보 대 비경보의 M4 평균 절대 오차, 방향 적중률.
   5 등급별 요약: A·B·C (시범 포함) 별 오차·승률·적중률.
@@ -23,6 +27,7 @@ import pandas as pd
 
 from .. import db
 from ..config import output_path
+from ..adapters import kr_consensus
 from ..evaluate import event_study as es
 from ..evaluate.live_check import actual_first
 from .record import T_RECORD
@@ -80,6 +85,7 @@ def compare(rec: pd.DataFrame, with_returns: bool = True) -> pd.DataFrame:
         out["err_consensus"] = (np.log(cons) - np.log(r["rev_base"]) - ga) if cons and pd.notna(cons) and cons > 0 else np.nan
         sig = r.get("sigma")
         out["sur"] = (a["value"] - r["rev_base"] - r["delta"]) / sig if sig and pd.notna(sig) and pd.notna(r.get("delta")) else np.nan
+        out.update(consensus_check(r, a["value"], a["first_dt"], ga))
         d = r.get("nsur_drv")
         out["drv_hit"] = (np.sign(d) == np.sign(out["sur"] - r["nsur_mom"])) if (d is not None and pd.notna(d) and d != 0
                                                                                  and pd.notna(out["sur"])) else np.nan
@@ -88,10 +94,25 @@ def compare(rec: pd.DataFrame, with_returns: bool = True) -> pd.DataFrame:
     return add_cars(c) if with_returns and len(c) else c
 
 
+def consensus_check(r: Dict, actual: float, actual_dt, ga: float) -> Dict:
+    e, fq, base = r["entity_id"], r["fiscal_quarter"], r["rev_base"]
+    cp = kr_consensus.read_consensus(e, fq, r["asof_date"])["value"]
+    cf = kr_consensus.read_consensus(e, fq, actual_dt, strict=True)["value"] if actual_dt is not None and pd.notna(actual_dt) else None
+    err = lambda v: (float(np.log(v) - np.log(base)) - ga) if v and v > 0 else np.nan
+    rev_e = r.get("rev_E")
+    gap = (float(rev_e) / cp - 1) if cp and rev_e is not None and pd.notna(rev_e) else np.nan
+    sc = (actual / cf - 1) if cf else np.nan
+    hit = (np.sign(gap) == np.sign(sc)) if pd.notna(gap) and pd.notna(sc) and gap != 0 and sc != 0 else np.nan
+    return {"c_pre5": cp if cp else np.nan, "c_final": cf if cf else np.nan, "err_C_pre5": err(cp), "err_C_final": err(cf),
+            "gap_E_c": gap, "surprise_c": sc, "gap_hit": hit}
+
+
 # ---------------------------------------------------------------- 성적표 항목
 def _hit(c: pd.DataFrame) -> Dict:
     x = c["drv_hit"].dropna() if "drv_hit" in c else pd.Series(dtype=float)
-    return {"n": len(x), "drv_hit_rate": float(x.astype(bool).mean()) if len(x) else np.nan}
+    y = c["gap_hit"].dropna() if "gap_hit" in c else pd.Series(dtype=float)
+    return {"n": len(x), "drv_hit_rate": float(x.astype(bool).mean()) if len(x) else np.nan,
+            "n_gap": len(y), "gap_hit_rate": float(y.astype(bool).mean()) if len(y) else np.nan}
 
 
 def _win(c: pd.DataFrame) -> pd.DataFrame:
@@ -112,7 +133,7 @@ def item1_hit(c: pd.DataFrame) -> pd.DataFrame:
 
 def item2_errors(c: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for m in list(MODELS) + ["consensus"]:
+    for m in list(MODELS) + ["consensus", "C_pre5", "C_final"]:
         e = c[f"err_{m}"].dropna() if f"err_{m}" in c else pd.Series(dtype=float)
         rows.append({"model": m, "n": len(e), "mean_abs_err": e.abs().mean() if len(e) else np.nan,
                      "rmse": float(np.sqrt((e ** 2).mean())) if len(e) else np.nan, "mean_err": e.mean() if len(e) else np.nan})

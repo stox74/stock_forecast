@@ -21,7 +21,8 @@
   '드라이버부분(cov=)'), '기업사건'(대상 분기가 기업 사건 제외 구간).
 - 예상 발표일: 이벤트표 첫 공시일이 있으면 그 날 ('실제'). 없으면 최근 5년 같은 분기 번호의 (첫 공시일 - 분기말) 일수
   중앙값을 분기말에 더함 ('추정').
-- 컨센서스: fd_consensus 의 t 이전 최신 매출 컨센서스 평균 (없으면 빈칸).
+- 컨센서스 (2b): adapters.kr_consensus.read_consensus 로 대상 분기 매출 컨센서스 중 관측일 <= t 인 최신 값 c_latest(원)와
+  관측일 c_latest_asof. gap_E = rev_E / c_latest - 1, gap_M4 = rev_M4 / c_latest - 1 (없으면 빈칸).
 """
 import argparse
 import html
@@ -31,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 from .. import asof, entity, events
-from ..adapters.consensus import read_consensus
+from ..adapters import kr_consensus
 from ..config import output_path, RELEASE_RULES
 from ..nowcast import features as ft
 from ..nowcast import run
@@ -228,20 +229,25 @@ def entity_row(e: str, q: pd.Timestamp, t_live: Optional[pd.Timestamp], meta: Di
         warn.append("기업사건")
     out["warnings"] = ";".join(warn)
     out.update(expected_announce(e, q, fye, events.read_events([e])))
-    c = read_consensus([e], "revenue", asof=t)
-    c = c[c["fiscal_quarter"] == out["fiscal_quarter"]]
-    out["consensus"] = float(c["mean"].iloc[0]) if len(c) else np.nan
-    out["consensus_asof"] = c["asof_date"].iloc[0].date() if len(c) else None
     if e in CONTROLS:              # 대조군: B2 만 표시
         for k in ("g_M4", "rev_M4", "g_E", "rev_E", "nsur_drv", "drv_direction", "E_direction", "agree", "g_TS"):
             out[k] = np.nan if not isinstance(out.get(k), str) else ""
+    out.update(consensus_cols(e, out["fiscal_quarter"], t, out.get("rev_E"), out.get("rev_M4")))
     return out
+
+
+def consensus_cols(e: str, fq: str, t: pd.Timestamp, rev_E, rev_M4) -> Dict:
+    c = kr_consensus.read_consensus(e, fq, t)
+    v = c["value"]
+    gap = lambda n: (float(n) / v - 1) if v and n is not None and pd.notna(n) else np.nan
+    return {"c_latest": v if v else np.nan, "c_latest_asof": c["asof"].date() if c["asof"] is not None else None,
+            "gap_E": gap(rev_E), "gap_M4": gap(rev_M4)}
 
 
 COLUMNS = ["grade", "entity_id", "name", "sector", "fiscal_quarter", "mode", "asof_date", "main_model",
            "rev_E", "g_E", "rev_M4", "g_M4", "g_B2", "g_TS", "g_M1", "M1_model", "E_components", "nsur_drv",
            "drv_direction", "E_direction", "agree", "shock_alert", "shock_x", "shock_p10", "shock_p90", "shock_n",
-           "drv_3m_yoy", "drv_3m_last", "warnings", "announce_date", "announce_kind", "consensus", "consensus_asof",
+           "drv_3m_yoy", "drv_3m_last", "warnings", "announce_date", "announce_kind", "c_latest", "c_latest_asof", "gap_E", "gap_M4",
            "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma"]
 GRADE_ORDER = {"A": 0, "B": 1, "C": 2, "B2만": 3}
 
@@ -278,15 +284,18 @@ def to_html(tab: pd.DataFrame, title: str) -> str:
             ("rev_M4", "보조: M4 예상(조원)"), ("g_M4", "보조: M4 성장률"),
             ("nsur_drv", "nsur_drv"), ("drv_direction", "drv 방향"), ("E_direction", "E 방향"), ("agree", "일치"),
             ("shock_alert", "충격 경보"), ("drv_3m_yoy", "드라이버 3개월"), ("warnings", "경고"),
-            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"), ("consensus", "컨센서스(조원)")]
+            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"), ("c_latest", "컨센서스(조원)"), ("c_latest_asof", "컨센서스 관측일"),
+            ("gap_E", "차이 E-컨센"), ("gap_M4", "보조: 차이 M4-컨센")]
 
     def fmt(c, v):
         if v is None or (isinstance(v, float) and np.isnan(v)):
             return ""
-        if c in ("rev_M4", "rev_E", "consensus"):
+        if c in ("rev_M4", "rev_E", "c_latest"):
             return f"{v / 1e12:,.3f}"
         if c in ("g_M4", "g_E", "g_B2", "drv_3m_yoy"):
             return f"{(np.exp(v) - 1) * 100:+.1f}%"
+        if c in ("gap_E", "gap_M4"):
+            return f"{v * 100:+.1f}%"
         if c == "nsur_drv":
             return f"{v:+.2f}"
         return html.escape(str(v))
@@ -311,6 +320,7 @@ th{{position:sticky;top:0;background:var(--bg)}} td:nth-child(-n+3),th:nth-child
 tr.alert td{{background:var(--alert)}} tr.mismatch td{{background:var(--mis)}} tr.alert.mismatch td{{background:var(--alert)}}
 </style></head><body><h1>{html.escape(title)}</h1>
 <p>등급별 정렬. 대표 예상 매출은 E (M1·B2·TS 동일 가중), M4 는 보조 열. 서프라이즈(nsur_drv)·충격 경보는 M4 기준.
+차이 = 예상 매출 / 최신 컨센서스 - 1 (2b 검증에서 Q2 미달로 주 신호는 nsur_drv 유지, 참고 열).
 붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 (exp(g)-1). 등급은 표시용이며 계산에 쓰지 않음.</p>
 <div class="wrap"><table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table></div></body></html>"""
 
