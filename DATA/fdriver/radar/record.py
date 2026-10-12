@@ -28,7 +28,7 @@ RECORD_KEY = ["entity_id", "fiscal_quarter", "asof_date"]
 NUM_COLS = ["rev_M4", "g_M4", "rev_E", "g_E", "g_B2", "g_TS", "g_M1", "nsur_drv", "shock_x", "shock_p10", "shock_p90",
             "drv_3m_yoy", "consensus", "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma", "gap_E", "gap_M4"]
 STR_COLS = {"grade": 10, "name": 50, "sector": 30, "mode": 20, "main_model": 40, "M1_model": 40, "E_components": 80,
-            "drv_direction": 4, "E_direction": 4, "agree": 10, "shock_alert": 40, "drv_3m_last": 7, "warnings": 120,
+            "drv_direction": 4, "E_direction": 4, "agree": 10, "shock_alert": 40, "drv_3m_last": 7, "warnings": 120, "gap_agree": 10,
             "announce_kind": 60}
 
 
@@ -61,12 +61,13 @@ def ddl_live_like(table: str) -> str:
 
 
 def ensure_columns(table: str = T_RECORD) -> list:
-    """이미 있는 기록 테이블에 NUM_COLS 의 새 열(2b: gap_E, gap_M4)이 없으면 NULL 허용 열로 추가한다.
-    기존 행의 값은 바뀌지 않는다 (새 열만 NULL)."""
+    """이미 있는 기록 테이블에 NUM_COLS, STR_COLS 의 새 열(2b: gap_E, gap_M4 / K3: gap_agree)이 없으면 NULL 허용 열로
+    추가한다. 기존 행의 값은 바뀌지 않는다 (새 열만 NULL)."""
     have = set(db.read_sql(f"SELECT * FROM `{table}` LIMIT 0").columns)
-    add = [c for c in NUM_COLS if c not in have]
+    add = [c for c in NUM_COLS + list(STR_COLS) if c not in have]
     for c in add:
-        db.execute_fd_ddl(f"ALTER TABLE `{table}` ADD COLUMN `{c}` DOUBLE NULL")
+        typ = f"VARCHAR({STR_COLS[c]})" if c in STR_COLS else "DOUBLE"
+        db.execute_fd_ddl(f"ALTER TABLE `{table}` ADD COLUMN `{c}` {typ} NULL")
     return add
 
 
@@ -83,7 +84,6 @@ def prepare_rows(res: Dict, version: str, record_id: str, exclude_announced: boo
     t_map = {e: pd.Timestamp(d) for e, d in zip(tab["entity_id"], tab["asof_date"])}
     done = announced_before(tab, t_map) if exclude_announced else tab.iloc[0:0][["entity_id", "name"]]
     tab = tab[~tab["entity_id"].isin(done["entity_id"])]
-    tab["consensus"], tab["consensus_asof"] = tab["c_latest"], tab["c_latest_asof"]   # 2b: 컨센서스 열 = c_latest
     rec = tab[RECORD_KEY + NUM_COLS + list(STR_COLS) + ["shock_n", "announce_date", "consensus_asof"]].copy()
     rec["record_id"], rec["code_version"] = record_id, version
     rec["shock_n"] = [int(x) if pd.notna(x) else None for x in pd.to_numeric(rec["shock_n"], errors="coerce")]

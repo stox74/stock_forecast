@@ -21,8 +21,9 @@
   '드라이버부분(cov=)'), '기업사건'(대상 분기가 기업 사건 제외 구간).
 - 예상 발표일: 이벤트표 첫 공시일이 있으면 그 날 ('실제'). 없으면 최근 5년 같은 분기 번호의 (첫 공시일 - 분기말) 일수
   중앙값을 분기말에 더함 ('추정').
-- 컨센서스 (2b): adapters.kr_consensus.read_consensus 로 대상 분기 매출 컨센서스 중 관측일 <= t 인 최신 값 c_latest(원)와
-  관측일 c_latest_asof. gap_E = rev_E / c_latest - 1, gap_M4 = rev_M4 / c_latest - 1 (없으면 빈칸).
+- 컨센서스 (2b, K3 고정): adapters.kr_consensus.read_consensus 로 대상 분기 매출 컨센서스 중 관측일 <= t 인 최신 값
+  consensus(원)와 관측일 consensus_asof. 열 정의는 COLUMN_DESC (출력 때 radar_columns_*.csv 로 함께 저장).
+  g_* 열은 로그 차분 ln(예상 / 전년 동기), *_pct 열은 단순 성장률 (%), gap_* 은 비율 (0.05 = 5%).
 """
 import argparse
 import html
@@ -232,23 +233,59 @@ def entity_row(e: str, q: pd.Timestamp, t_live: Optional[pd.Timestamp], meta: Di
     if e in CONTROLS:              # 대조군: B2 만 표시
         for k in ("g_M4", "rev_M4", "g_E", "rev_E", "nsur_drv", "drv_direction", "E_direction", "agree", "g_TS"):
             out[k] = np.nan if not isinstance(out.get(k), str) else ""
-    out.update(consensus_cols(e, out["fiscal_quarter"], t, out.get("rev_E"), out.get("rev_M4")))
+    out.update(consensus_cols(e, out["fiscal_quarter"], t, out.get("rev_E"), out.get("rev_M4"), out.get("rev_base")))
     return out
 
 
-def consensus_cols(e: str, fq: str, t: pd.Timestamp, rev_E, rev_M4) -> Dict:
+# |gap_E| 크기 구분: 2b K2 판정 표본(fd_eval_2b run 20261012_222348, 488건)의 |gap_E| 1/3, 2/3 분위 (고정값)
+GAP_SIZE_CUTS = (0.0244, 0.0733)
+
+
+def _sign_label(x) -> str:
+    return "" if x is None or pd.isna(x) else ("위" if x > 0 else ("아래" if x < 0 else "-"))
+
+
+def consensus_cols(e: str, fq: str, t: pd.Timestamp, rev_E, rev_M4, rev_base=None) -> Dict:
     c = kr_consensus.read_consensus(e, fq, t)
     v = c["value"]
     gap = lambda n: (float(n) / v - 1) if v and n is not None and pd.notna(n) else np.nan
-    return {"c_latest": v if v else np.nan, "c_latest_asof": c["asof"].date() if c["asof"] is not None else None,
-            "gap_E": gap(rev_E), "gap_M4": gap(rev_M4)}
+    gE, gM = gap(rev_E), gap(rev_M4)
+    size = "" if pd.isna(gE) else ("소" if abs(gE) < GAP_SIZE_CUTS[0] else ("중" if abs(gE) < GAP_SIZE_CUTS[1] else "대"))
+    agree = "" if pd.isna(gE) or pd.isna(gM) else ("-" if gE == 0 or gM == 0 else ("일치" if np.sign(gE) == np.sign(gM) else "불일치"))
+    g_c = (v / float(rev_base) - 1) * 100 if v and rev_base is not None and pd.notna(rev_base) and rev_base > 0 else np.nan
+    return {"consensus": v if v else np.nan, "consensus_asof": c["asof"].date() if c["asof"] is not None else None,
+            "g_C_pct": g_c, "gap_E": gE, "gap_M4": gM, "gap_dir": _sign_label(gE), "gap_size": size, "gap_agree": agree}
 
 
 COLUMNS = ["grade", "entity_id", "name", "sector", "fiscal_quarter", "mode", "asof_date", "main_model",
-           "rev_E", "g_E", "rev_M4", "g_M4", "g_B2", "g_TS", "g_M1", "M1_model", "E_components", "nsur_drv",
+           "rev_E", "g_E", "g_E_pct", "rev_M4", "g_M4", "g_M4_pct", "g_B2", "g_TS", "g_M1", "M1_model", "E_components",
+           "nsur_drv",
            "drv_direction", "E_direction", "agree", "shock_alert", "shock_x", "shock_p10", "shock_p90", "shock_n",
-           "drv_3m_yoy", "drv_3m_last", "warnings", "announce_date", "announce_kind", "c_latest", "c_latest_asof", "gap_E", "gap_M4",
+           "drv_3m_yoy", "drv_3m_last", "warnings", "announce_date", "announce_kind", "consensus", "consensus_asof",
+           "g_C_pct", "gap_E", "gap_M4", "gap_dir", "gap_size", "gap_agree",
            "rev_base", "nsur_M4", "nsur_mom", "delta", "sigma"]
+COLUMN_DESC = {
+    "rev_E": "대표 예상 매출 E (원). E = 드라이버 요소, B2, TS 동일 가중",
+    "g_E": "E 성장률, 로그 차분 ln(rev_E / rev_base)",
+    "g_E_pct": "E 단순 성장률 (%) = (exp(g_E) - 1) x 100",
+    "rev_M4": "보조: M4 예상 매출 (원)",
+    "g_M4": "M4 성장률, 로그 차분",
+    "g_M4_pct": "M4 단순 성장률 (%)",
+    "g_B2": "B2 (모멘텀 벤치마크) 성장률, 로그 차분",
+    "g_TS": "TS (ETS, ARIMA 평균) 성장률, 로그 차분",
+    "g_M1": "M1 드라이버 모델 성장률, 로그 차분",
+    "nsur_drv": "2c M4 서프라이즈 신호 (레이더 주 신호)",
+    "agree": "drv 방향(nsur_drv 부호)과 E 방향(sign(g_E - g_B2)) 일치",
+    "consensus": "대상 분기 매출 컨센서스 (원), 관측일 <= 기준일 인 최신 값 (kr_revenue_consensus)",
+    "consensus_asof": "컨센서스 관측일",
+    "g_C_pct": "컨센서스 단순 성장률 (%) = (consensus / rev_base - 1) x 100",
+    "gap_E": "rev_E / consensus - 1 (비율, 2b 검증 참고 신호)",
+    "gap_M4": "rev_M4 / consensus - 1 (비율, 참고)",
+    "gap_dir": "gap_E 방향: 위 (예상 > 컨센서스) / 아래 / -",
+    "gap_size": "|gap_E| 크기: 소 < 2.44% <= 중 < 7.33% <= 대 (2b K2 판정 표본 3분위)",
+    "gap_agree": "gap_M4 와 gap_E 부호 일치 (일치 / 불일치 / -)",
+    "rev_base": "전년 동기 매출 (원, 기준일에 알던 값)",
+}
 GRADE_ORDER = {"A": 0, "B": 1, "C": 2, "B2만": 3}
 
 
@@ -270,6 +307,8 @@ def build(quarter: str, asof_date=None) -> Dict:
     for c in COLUMNS:
         if c not in tab:
             tab[c] = np.nan
+    tab["g_E_pct"] = (np.exp(pd.to_numeric(tab["g_E"], errors="coerce")) - 1) * 100
+    tab["g_M4_pct"] = (np.exp(pd.to_numeric(tab["g_M4"], errors="coerce")) - 1) * 100
     tab = tab[COLUMNS]
     tab["_o"] = tab["grade"].map(GRADE_ORDER)
     tab = tab.sort_values(["_o", "name"]).drop(columns="_o").reset_index(drop=True)
@@ -280,18 +319,21 @@ def build(quarter: str, asof_date=None) -> Dict:
 # ---------------------------------------------------------------- 4. 출력
 def to_html(tab: pd.DataFrame, title: str) -> str:
     show = [("grade", "등급"), ("name", "기업"), ("sector", "업종"), ("asof_date", "기준일"),
-            ("rev_E", "예상 매출 E(조원)"), ("g_E", "E 성장률"), ("g_B2", "B2 성장률"),
-            ("rev_M4", "보조: M4 예상(조원)"), ("g_M4", "보조: M4 성장률"),
+            ("rev_E", "예상 매출 E(조원)"), ("g_E_pct", "E 성장률"), ("g_B2", "B2 성장률"),
+            ("rev_M4", "보조: M4 예상(조원)"), ("g_M4_pct", "보조: M4 성장률"),
             ("nsur_drv", "nsur_drv"), ("drv_direction", "drv 방향"), ("E_direction", "E 방향"), ("agree", "일치"),
             ("shock_alert", "충격 경보"), ("drv_3m_yoy", "드라이버 3개월"), ("warnings", "경고"),
-            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"), ("c_latest", "컨센서스(조원)"), ("c_latest_asof", "컨센서스 관측일"),
-            ("gap_E", "차이 E-컨센"), ("gap_M4", "보조: 차이 M4-컨센")]
+            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"), ("consensus", "컨센서스(조원)"),
+            ("consensus_asof", "컨센서스 관측일"), ("g_C_pct", "컨센서스 성장률"), ("gap_E", "차이 E-컨센"),
+            ("gap_dir", "차이 방향"), ("gap_size", "차이 크기"), ("gap_M4", "보조: 차이 M4-컨센"), ("gap_agree", "M4·E 차이 일치")]
 
     def fmt(c, v):
         if v is None or (isinstance(v, float) and np.isnan(v)):
             return ""
-        if c in ("rev_M4", "rev_E", "c_latest"):
+        if c in ("rev_M4", "rev_E", "consensus"):
             return f"{v / 1e12:,.3f}"
+        if c in ("g_E_pct", "g_M4_pct", "g_C_pct"):
+            return f"{v:+.1f}%"
         if c in ("g_M4", "g_E", "g_B2", "drv_3m_yoy"):
             return f"{(np.exp(v) - 1) * 100:+.1f}%"
         if c in ("gap_E", "gap_M4"):
@@ -321,7 +363,9 @@ tr.alert td{{background:var(--alert)}} tr.mismatch td{{background:var(--mis)}} t
 </style></head><body><h1>{html.escape(title)}</h1>
 <p>등급별 정렬. 대표 예상 매출은 E (M1·B2·TS 동일 가중), M4 는 보조 열. 서프라이즈(nsur_drv)·충격 경보는 M4 기준.
 차이 = 예상 매출 / 최신 컨센서스 - 1 (2b 검증에서 Q2 미달로 주 신호는 nsur_drv 유지, 참고 열).
-붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 (exp(g)-1). 등급은 표시용이며 계산에 쓰지 않음.</p>
+붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 단순 성장률 (exp(g)-1).
+CSV 의 g_* 열은 로그 차분 ln(예상 / 전년 동기), *_pct 열이 단순 성장률(%). 차이 크기: 소 &lt; 2.44% &le; 중 &lt; 7.33% &le; 대.
+열 설명은 같은 생성 시각의 radar_columns_*.csv. 등급은 표시용이며 계산에 쓰지 않음.</p>
 <div class="wrap"><table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table></div></body></html>"""
 
 
@@ -331,14 +375,17 @@ def save(res: Dict) -> Dict:
     csv = d / f"radar_{res['quarter']}_{stamp}.csv"
     htm = d / f"radar_{res['quarter']}_{stamp}.html"
     chk = d / f"datacheck_{res['quarter']}_{stamp}.csv"
-    for f in (csv, htm, chk):
+    cols = d / f"radar_columns_{res['quarter']}_{stamp}.csv"
+    for f in (csv, htm, chk, cols):
         if f.exists():
             raise FileExistsError(f)
     res["table"].to_csv(csv, index=False, encoding="utf-8-sig")
     res["checks"].to_csv(chk, index=False, encoding="utf-8-sig")
+    pd.DataFrame({"column": COLUMNS, "description": [COLUMN_DESC.get(c, "") for c in COLUMNS]}).to_csv(
+        cols, index=False, encoding="utf-8-sig")
     htm.write_text(to_html(res["table"], f"fdriver 레이더 {res['quarter']} (기준일 {res['t'].date()}, 생성 {stamp})"),
                    encoding="utf-8")
-    return {"csv": csv, "html": htm, "datacheck": chk, "stamp": stamp}
+    return {"csv": csv, "html": htm, "datacheck": chk, "columns": cols, "stamp": stamp}
 
 
 def main(argv=None):

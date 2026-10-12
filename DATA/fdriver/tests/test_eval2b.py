@@ -149,10 +149,40 @@ class TestRadarConsensus(unittest.TestCase):
             r = B.consensus_cols("000001", "2026Q3", T("2026-10-12"), 110.0, None)
         self.assertAlmostEqual(r["gap_E"], 0.10)
         self.assertTrue(np.isnan(r["gap_M4"]))
-        self.assertEqual(r["c_latest_asof"], T("2026-09-30").date())
+        self.assertEqual(r["consensus_asof"], T("2026-09-30").date())
+        self.assertEqual((r["gap_dir"], r["gap_size"], r["gap_agree"]), ("위", "대", ""))
+        self.assertTrue(np.isnan(r["g_C_pct"]))                                  # rev_base 없음
+        with mock.patch.object(kc, "read_consensus", return_value={"value": 100.0, "asof": T("2026-09-30")}):
+            r = B.consensus_cols("000001", "2026Q3", T("2026-10-12"), 99.0, 103.0, rev_base=80.0)
+        self.assertEqual((r["gap_dir"], r["gap_size"], r["gap_agree"]), ("아래", "소", "불일치"))
+        self.assertAlmostEqual(r["g_C_pct"], 25.0)
+        with mock.patch.object(kc, "read_consensus", return_value={"value": 100.0, "asof": T("2026-09-30")}):
+            r = B.consensus_cols("000001", "2026Q3", T("2026-10-12"), 105.0, 102.0)
+        self.assertEqual((r["gap_size"], r["gap_agree"]), ("중", "일치"))
         with mock.patch.object(kc, "read_consensus", return_value={"value": None, "asof": None}):
             r = B.consensus_cols("000001", "2026Q3", T("2026-10-12"), 110.0, 90.0)
-        self.assertTrue(np.isnan(r["c_latest"]) and np.isnan(r["gap_E"]))
+        self.assertTrue(np.isnan(r["consensus"]) and np.isnan(r["gap_E"]))
+        self.assertEqual((r["gap_dir"], r["gap_size"], r["gap_agree"]), ("", "", ""))
+
+    def test_column_desc(self):
+        from DATA.fdriver.radar import build as B
+        from DATA.fdriver.radar import record as rec
+        for c in ("consensus", "consensus_asof", "gap_E", "gap_M4", "gap_dir", "gap_size", "g_C_pct", "g_E_pct", "g_M4_pct"):
+            self.assertIn(c, B.COLUMNS)
+            self.assertTrue(B.COLUMN_DESC.get(c))
+        for c in ("g_E", "g_M4", "g_B2", "g_TS"):
+            self.assertIn("로그 차분", B.COLUMN_DESC[c])
+        self.assertIn("gap_M4", rec.NUM_COLS)
+        self.assertIn("gap_agree", rec.STR_COLS)
+        self.assertNotIn("c_latest", B.COLUMNS)
+
+    def test_q4_fix_in_memory(self):
+        from DATA.fdriver.eval2b import k3_fix_q4 as Q
+        nc = pd.DataFrame({"entity_id": ["005490", "005490", "000270"], "fiscal_quarter": ["2024Q4", "2024Q3", "2024Q4"],
+                           "rev_actual_first": [72.7, 18.0, 27.0], "rev_actual_final": [17.8, 18.1, 27.1]})
+        f = Q.fixed(nc)
+        self.assertEqual(f["rev_actual_first"].tolist(), [17.8, 18.0, 27.0])   # 대상 분기만
+        self.assertEqual(nc["rev_actual_first"].tolist(), [72.7, 18.0, 27.0])  # 원본은 그대로
 
     def test_scorecard_consensus_check(self):
         from DATA.fdriver.radar import scorecard as S
