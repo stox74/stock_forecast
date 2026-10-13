@@ -22,7 +22,7 @@ DataGuide 매출액 시장 컨센서스(분기) 엑셀 → investar DB 적재
   python kr_revenue_consensus_loader_v1.py --check                 # 적재된 DB 내용 점검만
 
 여러 번 실행해도 중복 저장되지 않는다 (같은 키는 갱신).
-"""
+
 from __future__ import annotations
 
 import argparse
