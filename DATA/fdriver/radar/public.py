@@ -34,14 +34,14 @@ class PublicLeak(RuntimeError):
 
 @lru_cache(maxsize=1)
 def _registry() -> dict:
-    """2c 등록 (DRIVER_SPECS 에 2c 기업 드라이버를 넣고 매핑 엑셀의 HS 코드를 돌려줌)."""
+    """2c 드라이버 구성과 매핑 엑셀 (registry.build: 전역 DRIVER_SPECS 를 바꾸지 않음)."""
     from ..stage2c import registry
-    return registry.register(rules="2b2")
+    return registry.build(False, "2b2")
 
 
 def _specs() -> tuple:
-    _registry()
-    return tuple(s for specs in ft.DRIVER_SPECS.values() for s in specs)
+    two_c = [s for specs in _registry()["specs"].values() for s in specs]
+    return tuple(two_c + [s for specs in ft.DRIVER_SPECS.values() for s in specs])
 
 
 def driver_codes() -> List[str]:
