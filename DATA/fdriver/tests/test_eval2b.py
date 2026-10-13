@@ -167,20 +167,21 @@ class TestRadarConsensus(unittest.TestCase):
     def test_column_desc(self):
         from DATA.fdriver.radar import build as B
         from DATA.fdriver.radar import record as rec
+        from DATA.fdriver.radar.coldesc import COLDESC
         for c in ("consensus", "consensus_asof", "gap_E", "gap_M4", "gap_dir", "gap_size", "g_C_pct", "g_E_pct", "g_M4_pct"):
             self.assertIn(c, B.COLUMNS)
-            self.assertTrue(B.COLUMN_DESC.get(c))
+            self.assertTrue(COLDESC.get(c))
         for c in ("g_E", "g_M4", "g_B2", "g_TS"):
-            self.assertIn("로그 차분", B.COLUMN_DESC[c])
+            self.assertTrue(COLDESC[c]["unit"].startswith("로그"))
         self.assertIn("gap_M4", rec.NUM_COLS)
         self.assertIn("gap_agree", rec.STR_COLS)
         self.assertNotIn("c_latest", B.COLUMNS)
         for c in ("rev_M1", "rev_B2", "rev_TS", "g_M1_pct", "g_B2_pct", "g_TS_pct"):
             self.assertIn(c, B.COLUMNS)
-            self.assertTrue(B.COLUMN_DESC.get(c))
+            self.assertTrue(COLDESC.get(c))
         for c in ("rev_M1", "rev_B2", "rev_TS"):
             self.assertIn(c, rec.NUM_COLS)
-        self.assertIn("기하평균", B.COLUMN_DESC["rev_E"])
+        self.assertIn("기하평균", COLDESC["rev_E"]["formula"])
 
     def test_e_is_geometric_mean(self):
         from DATA.fdriver.radar import ts
