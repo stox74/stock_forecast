@@ -35,7 +35,7 @@ STR_COLS = {"grade": 10, "name": 50, "sector": 30, "mode": 20, "main_model": 40,
 # 이미 E_direction, drv_direction, agree, shock_alert, warnings 로 저장된다.
 V2_NUM = ["spread_E_pct"]
 V2_STR = {"dir_E_vs_cons": 4, "agree_drv_cons": 10, "spread_E_from": 10, "flag_E_spread": 40, "decision": 40,
-          "decision_reason": 200}
+          "decision_reason": 200, "flag_dir_fallback": 30}
 NUM_COLS = NUM_COLS + V2_NUM
 STR_COLS = {**STR_COLS, **V2_STR}
 

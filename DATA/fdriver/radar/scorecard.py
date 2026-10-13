@@ -17,6 +17,8 @@ scorecard(compared): 성적표 1~5. 기록이 기준일별로 여러 번이면 b
   3 수익률: nsur_drv 상위 1/3 과 하위 1/3 기업의 평균 CAR 차이 (구간 a, b). 전체와 등급별 (나눔은 그 집합 안에서).
   4 충격 경보: 경보 대 비경보의 M4 평균 절대 오차, 방향 적중률.
   5 등급별 요약: A·B·C (시범 포함) 별 오차·승률·적중률.
+  6 E 편향 (출력 v3): 분기별 E 의 실제 대비 편향 e_bias_pct = (rev_E / 실제 - 1) x 100 의 평균·중앙값.
+    E 는 보정하지 않고 기록만 한다 (2b 약 -1.6%, 실전 3개 분기 후 재검토).
 실행: python -m DATA.fdriver.radar.scorecard --quarter 2026Q3 [--record-id ...]
 """
 import argparse
@@ -77,6 +79,8 @@ def compare(rec: pd.DataFrame, with_returns: bool = True) -> pd.DataFrame:
             rows.append(out)
             continue
         out["status"] = "비교"
+        rev_e = r.get("rev_E")
+        out["e_bias_pct"] = (float(rev_e) / a["value"] - 1) * 100 if rev_e is not None and pd.notna(rev_e) else np.nan
         ga = float(np.log(a["value"]) - np.log(r["rev_base"]))
         out["g_actual"] = ga
         for m, col in MODELS.items():
@@ -181,10 +185,23 @@ def item5_grade(c: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def item6_e_bias(c: pd.DataFrame) -> pd.DataFrame:
+    """분기별 E 평균 편향 (실제 대비 %). 보정하지 않고 기록만 한다."""
+    if "e_bias_pct" not in c:
+        return pd.DataFrame(columns=["fiscal_quarter", "n", "e_bias_mean_pct", "e_bias_median_pct", "share_below_actual"])
+    rows = []
+    for q, g in c.groupby("fiscal_quarter"):
+        b = pd.to_numeric(g["e_bias_pct"], errors="coerce").dropna()
+        rows.append({"fiscal_quarter": q, "n": len(b), "e_bias_mean_pct": b.mean() if len(b) else np.nan,
+                     "e_bias_median_pct": b.median() if len(b) else np.nan,
+                     "share_below_actual": float((b < 0).mean()) if len(b) else np.nan})
+    return pd.DataFrame(rows)
+
+
 def scorecard(c: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     c = c[c["status"] == "비교"].copy()
     return {"1_hit": item1_hit(c), "2_errors": item2_errors(c), "3_returns": item3_returns(c),
-            "4_alert": item4_alert(c), "5_by_grade": item5_grade(c)}
+            "4_alert": item4_alert(c), "5_by_grade": item5_grade(c), "6_e_bias": item6_e_bias(c)}
 
 
 def by_asof(c: pd.DataFrame) -> Dict[str, Dict[str, pd.DataFrame]]:

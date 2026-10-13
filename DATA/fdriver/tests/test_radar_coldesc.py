@@ -241,27 +241,108 @@ class TestDBNamesUnchanged(unittest.TestCase):
             self.assertEqual(int(r["n"].iloc[0]), 0)
 
 
-class TestPublic(unittest.TestCase):
-    def test_public_has_no_internal_sheets(self):
+class TestV3(unittest.TestCase):
+    """출력 v3: C등급 사유, 방향 대체, E 편향 기록."""
+
+    def test_c_grade_reason_includes_spread(self):
+        d, why = O.decide({"grade": "C", "gap_E_vs_cons_pct": 12.2, "flag_E_spread": "불일치(M1)", "flag_shock": ""})
+        self.assertEqual(d, "보류(등급)")
+        self.assertIn("C등급은 판단 보류", why)
+        self.assertIn("구성 불일치(M1)", why)
+        d, why = O.decide({"grade": "C", "gap_E_vs_cons_pct": 1.0, "flag_E_spread": "", "flag_shock": ""})
+        self.assertNotIn("구성", why)
+
+    def test_no_driver_direction_is_neutral(self):
+        d, why = O.decide({"grade": "A", "gap_E_vs_cons_pct": 8.0, "flag_E_spread": "", "flag_shock": "",
+                           "agree_drv_cons": "", "dir_E_vs_cons": "+", "rev_E": 1.0})
+        self.assertEqual(d, "중립")
+        self.assertIn("드라이버 방향 없음", why)
+        self.assertIn("드라이버 방향(dir_drv_vs_trend)이 공란이면", C.COLDESC["decision"]["note"])
+
+    def test_direction_fallback(self):
         t = _internal()
-        pub = P.public_table(t)
-        self.assertTrue(set(pub.columns) <= set(P.PUBLIC_HEADER.values()))
+        t.loc[1, "nsur_drv"] = np.nan                                       # z 없음, shock_dev 있음 (+)
         out = O.to_output(t)
-        for text in (pub.to_csv(index=False), P.public_html(pub, "레이더 2026Q3")):
-            P.check_public(text)
-            for c in O.JUDGE_COLUMNS + ["spread_E_pct", "z_drv_vs_trend", "shock_dev"]:
-                if c not in P.PUBLIC_COLUMNS:
+        self.assertEqual(out.loc[1, "dir_drv_vs_trend"], "+")
+        self.assertEqual(out.loc[1, "flag_dir_fallback"], "방향 대체(shock_dev)")
+        self.assertEqual(out.loc[0, "flag_dir_fallback"], "")
+        self.assertEqual(out.loc[2, "dir_drv_vs_trend"], "")                # 대조군: 둘 다 없음
+        self.assertEqual(out.loc[2, "flag_dir_fallback"], "")
+        self.assertIn("flag_dir_fallback", O.JUDGE_COLUMNS)
+        self.assertIn("실전 3개 분기 후 재검토", O.rule_summary())
+
+    def test_scorecard_e_bias(self):
+        from DATA.fdriver.radar import scorecard as S
+        c = pd.DataFrame({"status": ["비교"] * 4, "fiscal_quarter": ["2026Q3"] * 3 + ["2026Q4"],
+                          "e_bias_pct": [-2.0, 1.0, -5.0, 3.0]})
+        t = S.item6_e_bias(c).set_index("fiscal_quarter")
+        self.assertAlmostEqual(t.loc["2026Q3", "e_bias_mean_pct"], -2.0)
+        self.assertAlmostEqual(t.loc["2026Q3", "e_bias_median_pct"], -2.0)
+        self.assertAlmostEqual(t.loc["2026Q3", "share_below_actual"], 2 / 3)
+        self.assertEqual(int(t.loc["2026Q4", "n"]), 1)
+
+
+class TestPublic(unittest.TestCase):
+    def _out(self):
+        return O.to_output(_internal())
+
+    def test_market_label(self):
+        self.assertEqual([P.market_label(x) for x in (5.0, 4.99, -4.99, -5.0, np.nan)], ["상회", "부합", "부합", "하회", ""])
+
+    def test_before_columns_only_allowed(self):
+        pub = P.public_before(self._out(), "2026-10-12 21:50")
+        self.assertEqual(list(pub.columns), list(P.PUBLIC_BEFORE.values()))
+        self.assertEqual(len(pub), 3)                                         # E 없는 대조군 행 제외
+        self.assertNotIn("(", "".join(pub["업종"].astype(str)))
+        k = pub.set_index("기업")
+        self.assertEqual(k.loc["나", "시장 예상 대비"], "부합")                 # 금호타이어형 -3%
+        self.assertEqual(k.loc["가", "시장 예상 대비"], "하회")                 # 삼성전자형 -11.8%
+
+    def test_after_hit(self):
+        out = self._out()
+        actual = pd.Series({"005930": 230e12, "073240": 1.28e12, "009150": 3.0e12})
+        pub = P.public_after(out, "2026-10-12 21:50", actual)
+        self.assertEqual(list(pub.columns), P.PUBLIC_COLUMNS)
+        k = pub.set_index("기업")
+        self.assertEqual(k.loc["가", "방향 적중"], "빗나감")                    # 예측 하회, 실제 230/200.3 = +14.8% 상회
+        self.assertEqual(k.loc["나", "방향 적중"], "적중")                      # 둘 다 부합
+        self.assertAlmostEqual(k.loc["나", "예측 오차(%)"], round((out.loc[1, "rev_E"] / 1.28e12 - 1) * 100, 1))
+
+    def test_public_has_no_internal(self):
+        out = self._out()
+        for pub in (P.public_before(out, "2026-10-12 21:50"),
+                    P.public_after(out, "2026-10-12 21:50", pd.Series({"005930": 2e14}))):
+            for text in (pub.to_csv(index=False), P.public_html(pub, "레이더 2026Q3")):
+                P.check_public(text)
+                for c in O.JUDGE_COLUMNS + ["spread_E_pct", "z_drv_vs_trend", "shock_dev", "grade", "rev_cons", "jo_cons"]:
                     self.assertNotIn(c, text)
-            for v in out["decision"]:
-                self.assertNotIn(v, text)
+                for v in list(out["decision"]) + list(out["flag_E_spread"]):
+                    if v:
+                        self.assertNotIn(v, text)
+                for v in out["jo_cons"].dropna():                              # 컨센서스 수치
+                    self.assertNotIn(f"{v:.3f}", text)
 
     def test_guard_blocks_internal(self):
-        out = O.to_output(_internal())
+        out = self._out()
         for bad in [C.table(C.OUTPUT_COLUMNS).to_csv(index=False), B.desc_html(C.OUTPUT_COLUMNS),
                     O.judgement(out).to_csv(index=False), "기업,판단\n가,후보(상향)", "기업,드라이버\n가,M1:854232",
-                    "기업,원천\n가,export", "x " + C.COLDESC["drv_3m_yoy_pct"]["note"]]:
+                    "기업,원천\n가,export", "x " + C.COLDESC["drv_3m_yoy_pct"]["note"], "기업,등급\n가,A",
+                    "기업,컨센서스(조원)\n가,1.2", "기업,모형\n가,TS", "기업,경보\n가,충격(상향)"]:
             with self.assertRaises(P.PublicLeak):
                 P.check_public(bad)
+
+    def test_save_public_with_sha(self):
+        pub = P.public_before(self._out(), "2026-10-12 21:50")
+        with tempfile.TemporaryDirectory() as d:
+            rec = Path(d) / "record_2026Q3_x.csv"
+            rec.write_text("a,b\n1,2\n", encoding="utf-8")
+            from unittest import mock
+            with mock.patch.object(P, "record_file", return_value=rec):
+                r = P.save_public("2026Q3", "x", out_dir=Path(d) / "pub", pub=pub)
+            from DATA.fdriver.live import sha256
+            self.assertEqual(r["sha256"], sha256(rec))
+            self.assertIn(r["sha256"], r["sha256_file"].read_text(encoding="utf-8"))
+            self.assertFalse(list((Path(d) / "pub").glob("*.xlsx")))
 
 
 if __name__ == "__main__":

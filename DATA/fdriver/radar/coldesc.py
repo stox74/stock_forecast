@@ -42,9 +42,12 @@ COLDESC = {
                    "4 컨센서스 대비 |갭| >= 5% 이고 agree_drv_cons = 일치 -> 후보(상향/하향, 충격이면 +충격), "
                    "5 같은 갭에서 불일치 -> 관찰(방향 불일치), 6 |갭| < 5% -> 중립, "
                    "7 컨센서스 없음 + agree_E_drv_vs_trend = 일치 -> 관찰(컨센서스 없음, 상향/하향), 8 그 밖 -> 중립",
-                   "문자", "위에서부터 처음 걸리는 규칙. 기준값은 radar.output 상수 (갭 5%, 구성 불일치 15%). |갭| >= 5% 인데 드라이버 "
-                   "방향이 없으면 중립. E 의 하향 편향(2b 약 -1.6%)은 보정하지 않음", transform="radar.output.decide"),
+                   "문자", "위에서부터 처음 걸리는 규칙. 기준값은 radar.output 상수 (갭 5%, 구성 불일치 15%). 컨센서스가 있고 "
+                   "|갭| >= 5% 인데 드라이버 방향(dir_drv_vs_trend)이 공란이면 규칙 4·5 어느 쪽에도 걸리지 않아 '중립' "
+                   "(decision_reason '드라이버 방향 없음'). E 의 하향 편향(2b 약 -1.6%)은 보정하지 않음 (실전 3개 분기 후 재검토)",
+                   transform="radar.output.decide"),
     "decision_reason": _d(GJ, None, "판단에 이른 단계와 사유", "등급, 갭, 걸린 규칙의 사유를 ', ' 로 이음", "문자",
+                          "보류(등급)인 행에 구성 불일치도 켜져 있으면 두 사유를 함께 적음 (decision 은 보류(등급) 그대로)",
                           transform="radar.output.decide"),
     # 식별·등급
     "entity_id": _d(G1, "entity_id", "종목 코드 (6자리)", "", "코드"),
@@ -116,8 +119,14 @@ COLDESC = {
     # 방향·신호
     "dir_E_vs_trend": _d(GD, "E_direction", "E 가 직전 추세(B2)보다 높은지 낮은지", "sign(g_E - g_B2)", DIR,
                          "컨센서스 기준 방향은 dir_E_vs_cons. 내부 E_direction 은 0 이면 '0'", transform="sign"),
-    "dir_drv_vs_trend": _d(GD, "drv_direction", "드라이버가 직전 추세(B2)보다 위를 가리키는지", "sign(z_drv_vs_trend)", DIR,
-                           "sign(g_M4 - g_B2) 와 같음 (분모 > 0). 대조군 공란", transform="sign"),
+    "dir_drv_vs_trend": _d(GD, "drv_direction", "드라이버가 직전 추세(B2)보다 위를 가리키는지",
+                           "sign(z_drv_vs_trend), z 가 공란이고 shock_dev 가 있으면 sign(shock_dev)", DIR,
+                           "둘 다 M4 - B2 의 부호라 같은 값 (분모 > 0). 대체한 행은 flag_dir_fallback 표시. 대조군 공란. "
+                           "내부 drv_direction 은 대체하지 않은 값", transform="sign"),
+    "flag_dir_fallback": _d(GD, None, "드라이버 방향을 shock_dev 부호로 대신했는지",
+                            "z_drv_vs_trend 공란이고 shock_dev 있으면 '방향 대체(shock_dev)'", FLAG,
+                            "z 의 분모 rev_sigma_8q 가 없을 때 (직전 8분기 중 계산 가능한 분기 6개 미만, 예: 기업 사건 제외 구간)",
+                            transform="fallback"),
     "agree_E_drv_vs_trend": _d(GD, "agree", "dir_E_vs_trend 와 dir_drv_vs_trend 가 같은지", "둘 다 있으면 일치 / 불일치", AGR,
                                transform="agree"),
     "agree_drv_cons": _d(GD, None, "드라이버 방향(dir_drv_vs_trend)과 컨센서스 대비 방향(dir_E_vs_cons)이 같은지",

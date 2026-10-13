@@ -20,11 +20,13 @@ from .universe import CONTROLS
 
 GAP_THRESHOLD_PCT = 5.0
 SPREAD_THRESHOLD_PCT = 15.0
-E_BIAS_NOTE = "E 는 2b 검증에서 실제보다 약 -1.6% (중앙값) 낮게 나오는 경향이 있음. 보정하지 않음"
+E_BIAS_NOTE = ("E 는 2b 검증에서 실제보다 약 -1.6% (중앙값) 낮게 나오는 경향이 있음. 보정하지 않음 "
+               "(radar.scorecard 6_e_bias 에 분기별로 기록, 실전 3개 분기 후 재검토)")
+DIR_FALLBACK = "방향 대체(shock_dev)"
 
 DECISION_ORDER = ["후보", "검토", "관찰", "중립", "보류"]
 JUDGE_COLUMNS = ["decision", "decision_reason", "entity_id", "name", "sector", "grade", "announce_date", "announce_basis",
-                 "jo_E", "jo_cons", "gap_E_vs_cons_pct", "dir_E_vs_cons", "dir_drv_vs_trend", "z_drv_vs_trend",
+                 "jo_E", "jo_cons", "gap_E_vs_cons_pct", "dir_E_vs_cons", "dir_drv_vs_trend", "flag_dir_fallback", "z_drv_vs_trend",
                  "flag_shock", "flag_E_spread", "flag_q4", "flag_drv_missing", "flag_event", "flag_nowcast"]
 RULE_SUMMARY = ("판단 규칙 (위에서부터 처음 걸리는 것): 1 C등급 -> 보류(등급) / 2 구성 불일치 + 충격 -> 검토(충격+불일치) / "
                 "3 구성 불일치 -> 보류(불일치) / 4 컨센서스 대비 |차이| >= {gap}% 이고 드라이버 방향 = 컨센서스 대비 방향 -> 후보(상향·하향) / "
@@ -101,7 +103,7 @@ def decide(r: Dict) -> Tuple[str, str]:
     shock = str(r.get("flag_shock") or "")
     head = [f"{grade}등급"] + ([f"갭 {gap:+.1f}%"] if has_cons else [])
     if grade == "C":
-        return "보류(등급)", ", ".join(head + ["C등급은 판단 보류"])
+        return "보류(등급)", ", ".join(head + ["C등급은 판단 보류"] + ([f"구성 {r['flag_E_spread']}"] if spread_on else []))
     if spread_on and shock:
         return "검토(충격+불일치)", ", ".join(head + [f"구성 {r['flag_E_spread']}", shock])
     if spread_on:
@@ -147,7 +149,11 @@ def to_output(tab: pd.DataFrame) -> pd.DataFrame:
     o["gap_M4_vs_cons_pct"] = num("gap_M4") * 100
     o["dir_E_vs_cons"] = o["gap_E_vs_cons_pct"].map(sign_label)
     o["dir_E_vs_trend"] = (num("g_E") - num("g_B2")).map(sign_label)
-    o["dir_drv_vs_trend"] = num("nsur_drv").map(sign_label)
+    # z 가 공란이고 shock_dev 가 있으면 shock_dev 부호로 대신 (분모 sigma 가 없을 때. 같은 M4 - B2 의 부호)
+    z, dev = num("nsur_drv"), num("shock_x")
+    fb = z.isna() & dev.notna()
+    o["dir_drv_vs_trend"] = z.where(~fb, dev).map(sign_label)
+    o["flag_dir_fallback"] = np.where(fb, DIR_FALLBACK, "")
     o["agree_E_drv_vs_trend"] = [agree_label(a, b) for a, b in zip(o["dir_E_vs_trend"], o["dir_drv_vs_trend"])]
     o["agree_drv_cons"] = [agree_label(a, b) for a, b in zip(o["dir_drv_vs_trend"], o["dir_E_vs_cons"])]
     o["drv_3m_yoy_pct"] = (np.exp(num("drv_3m_yoy")) - 1) * 100
