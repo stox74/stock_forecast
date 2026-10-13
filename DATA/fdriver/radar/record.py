@@ -22,6 +22,7 @@ import pandas as pd
 from .. import db, events, live
 from ..config import output_path
 from . import build as B
+from . import output
 
 T_RECORD = "fd_live_record"
 RECORD_KEY = ["entity_id", "fiscal_quarter", "asof_date"]
@@ -30,6 +31,13 @@ NUM_COLS = ["rev_M4", "g_M4", "rev_E", "g_E", "g_B2", "g_TS", "g_M1", "rev_M1", 
 STR_COLS = {"grade": 10, "name": 50, "sector": 30, "mode": 20, "main_model": 40, "M1_model": 40, "E_components": 80,
             "drv_direction": 4, "E_direction": 4, "agree": 10, "shock_alert": 40, "drv_3m_last": 7, "warnings": 120, "gap_agree": 10,
             "announce_kind": 60}
+# v2 (radar.output): 새 출력 값은 새 열로 저장 (다음 기록부터, 1차 기록은 고쳐 쓰지 않음). 추세 기준 방향·충격 경보·경고는
+# 이미 E_direction, drv_direction, agree, shock_alert, warnings 로 저장된다.
+V2_NUM = ["spread_E_pct"]
+V2_STR = {"dir_E_vs_cons": 4, "agree_drv_cons": 10, "spread_E_from": 10, "flag_E_spread": 40, "decision": 40,
+          "decision_reason": 200}
+NUM_COLS = NUM_COLS + V2_NUM
+STR_COLS = {**STR_COLS, **V2_STR}
 
 
 def ddl_record(table: str = T_RECORD) -> str:
@@ -80,6 +88,9 @@ def announced_before(table: pd.DataFrame, t_map: Dict[str, pd.Timestamp]) -> pd.
 
 def prepare_rows(res: Dict, version: str, record_id: str, exclude_announced: bool):
     tab = res["table"].copy()
+    o = output.to_output(tab)
+    for c in V2_NUM + list(V2_STR):
+        tab[c] = o[c].values
     tab = tab[tab["asof_date"].notna()]
     t_map = {e: pd.Timestamp(d) for e, d in zip(tab["entity_id"], tab["asof_date"])}
     done = announced_before(tab, t_map) if exclude_announced else tab.iloc[0:0][["entity_id", "name"]]

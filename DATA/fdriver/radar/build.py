@@ -7,7 +7,10 @@
    - 실적이 이미 있는 분기(시험용): 기업별 pre5 기준일 (nowcast 와 같은 checkpoints 규칙).
 3. 레이더 표 (기업당 한 행): 종목·업종·등급, 대표 예상 매출 E (원화 금액, 전년 대비 성장률), 보조 M4 예상, B2 성장률,
    nsur_drv 크기·방향, E 방향, 일치 여부, 충격 경보, 드라이버 최근 3개월 전년 대비, 경고, 예상 발표일, 컨센서스.
-4. 출력: radar/<분기>/radar_<분기>_<생성일시>.csv, .html, .xlsx (덮어쓰지 않음).
+4. 출력 (v2, radar.output): 내부 표를 출력 이름으로 바꾼 표와 판단 표.
+   radar/<분기>/radar_<분기>_<생성일시>.csv (출력 이름), _decision.csv (판단), .html (판단 -> 전체 -> 변수설명),
+   .xlsx (판단 | radar | 변수설명), radar_columns_*.csv (변수설명). 덮어쓰지 않음.
+   내부 표(build() 의 table, COLUMNS)와 DB·실전 기록 열 이름은 그대로 둔다 (출력 이름 대응은 coldesc.COLDESC 'internal').
 
 정의 (R1 에서 정함, 리포트에 기록)
 - 성장률: 전년 동기 대비 로그 성장률 g. 예상 매출 = rev_base x exp(g).
@@ -42,7 +45,7 @@ from ..config import output_path, RELEASE_RULES
 from ..nowcast import features as ft
 from ..nowcast import run
 from ..signals import sur
-from . import coldesc, excel, ts
+from . import coldesc, excel, output, ts
 from .universe import CONTROLS, universe
 
 ALERT_LO, ALERT_HI, ALERT_MIN_HIST = 0.10, 0.90, 8
@@ -303,91 +306,100 @@ def build(quarter: str, asof_date=None) -> Dict:
             "models": pd.concat(models, ignore_index=True) if models else pd.DataFrame()}
 
 
-# ---------------------------------------------------------------- 4. 출력
+# ---------------------------------------------------------------- 4. 출력 (v2: 출력 이름, 판단, 변수설명)
+def _fmt(c: str, v) -> str:
+    if v is None or (isinstance(v, float) and np.isnan(v)) or v is pd.NaT:
+        return ""
+    if isinstance(v, (int, float, np.floating, np.integer)) and not isinstance(v, bool):
+        if c.startswith("jo_"):
+            return f"{v:,.3f}"
+        if c.startswith("rev_"):
+            return f"{v:,.0f}"
+        if c.endswith("_pct"):
+            return f"{v:+.1f}"
+        if c.startswith("z_"):
+            return f"{v:+.2f}"
+        if c.startswith("g_") or c.startswith("shock_") and c != "shock_n":
+            return f"{v:+.4f}"
+        return f"{v:g}"
+    return html.escape(str(v))
+
+
+def _table_html(t: pd.DataFrame, cls: str = "", row_class=None) -> str:
+    head = "".join(f"<th title='{html.escape(coldesc.COLDESC[c]['meaning'], quote=True)}'>{html.escape(c)}</th>"
+                   for c in t.columns)
+    body = []
+    for _, r in t.iterrows():
+        rc = row_class(r) if row_class else ""
+        body.append(f"<tr class='{rc}'>" + "".join(f"<td>{_fmt(c, r[c])}</td>" for c in t.columns) + "</tr>")
+    return f"<div class='wrap'><table class='{cls}'><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table></div>"
+
+
+def decision_class(r) -> str:
+    d = str(r.get("decision", ""))
+    return {"후보(상": "up", "후보(하": "down", "검토": "review", "보류": "hold"}.get(
+        next((k for k in ("후보(상", "후보(하", "검토", "보류") if d.startswith(k)), ""), "")
+
+
 def desc_html(columns) -> str:
-    """표 아래 변수 설명 표 (coldesc.table, 내부용)."""
+    """변수 설명 표 (coldesc.table, 내부용)."""
     t = coldesc.table(columns)
     head = "".join(f"<th>{html.escape(c)}</th>" for c in t.columns)
     body = "".join("<tr>" + "".join(f"<td>{html.escape(str(v))}</td>" for v in r) + "</tr>" for r in t.itertuples(index=False))
     return f'<h2>변수 설명</h2><div class="wrap"><table class="desc"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def to_html(tab: pd.DataFrame, title: str) -> str:
-    show = [("grade", "등급"), ("name", "기업"), ("sector", "업종"), ("asof_date", "기준일"),
-            ("rev_E", "예상 매출 E(조원)"), ("M1_model", "드라이버 모델"), ("rev_M1", "드라이버(조원)"),
-            ("rev_B2", "B2(조원)"), ("rev_TS", "TS(조원)"), ("rev_M4", "보조: M4(조원)"), ("consensus", "컨센서스(조원)"),
-            ("g_E_pct", "E 성장률"), ("g_M1_pct", "드라이버 성장률"), ("g_B2_pct", "B2 성장률"), ("g_TS_pct", "TS 성장률"),
-            ("g_M4_pct", "보조: M4 성장률"), ("g_C_pct", "컨센서스 성장률"),
-            ("nsur_drv", "nsur_drv"), ("drv_direction", "drv 방향"), ("E_direction", "E 방향"), ("agree", "일치"),
-            ("shock_alert", "충격 경보"), ("drv_3m_yoy", "드라이버 3개월"), ("warnings", "경고"),
-            ("announce_date", "예상 발표일"), ("announce_kind", "발표일 근거"),
-            ("consensus_asof", "컨센서스 관측일"), ("gap_E", "차이 E-컨센"),
-            ("gap_dir", "차이 방향"), ("gap_size", "차이 크기"), ("gap_M4", "보조: 차이 M4-컨센"), ("gap_agree", "M4·E 차이 일치")]
-
-    def fmt(c, v):
-        if v is None or (isinstance(v, float) and np.isnan(v)):
-            return ""
-        if c in ("rev_M4", "rev_E", "consensus", "rev_M1", "rev_B2", "rev_TS"):
-            return f"{v / 1e12:,.3f}"
-        if c in ("g_E_pct", "g_M4_pct", "g_C_pct", "g_M1_pct", "g_B2_pct", "g_TS_pct"):
-            return f"{v:+.1f}%"
-        if c in ("g_M4", "g_E", "g_B2", "drv_3m_yoy"):
-            return f"{(np.exp(v) - 1) * 100:+.1f}%"
-        if c in ("gap_E", "gap_M4"):
-            return f"{v * 100:+.1f}%"
-        if c == "nsur_drv":
-            return f"{v:+.2f}"
-        return html.escape(str(v))
-
-    head = "".join(f"<th>{h}</th>" for _, h in show)
-    body = []
-    for _, r in tab.iterrows():
-        cls = []
-        if isinstance(r["shock_alert"], str) and r["shock_alert"].startswith("경보"):
-            cls.append("alert")
-        if r["agree"] == "불일치":
-            cls.append("mismatch")
-        body.append(f"<tr class='{' '.join(cls)}'>" + "".join(f"<td>{fmt(c, r[c])}</td>" for c, _ in show) + "</tr>")
+def to_html(out: pd.DataFrame, judge: pd.DataFrame, title: str) -> str:
+    """맨 위 판단 표, 그 아래 전체 레이더 표 (출력 이름), 맨 아래 변수 설명 표. 머리글에 마우스를 올리면 의미."""
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title><style>
-:root{{--bg:#fcfcfb;--ink:#0b0b0b;--muted:#52514e;--line:#e6e5e0;--alert:#fde8e7;--mis:#fff5d6}}
-@media (prefers-color-scheme: dark){{:root{{--bg:#1a1a19;--ink:#f2f2f0;--muted:#c3c2b7;--line:#383835;--alert:#4a2423;--mis:#46391a}}}}
+:root{{--bg:#fcfcfb;--ink:#0b0b0b;--muted:#52514e;--line:#e6e5e0;--up:#e3f1e6;--down:#fde8e7;--review:#fff5d6;--hold:#ecebe7}}
+@media (prefers-color-scheme: dark){{:root{{--bg:#1a1a19;--ink:#f2f2f0;--muted:#c3c2b7;--line:#383835;--up:#1f3a26;--down:#4a2423;--review:#46391a;--hold:#2c2c2a}}}}
 body{{background:var(--bg);color:var(--ink);font-family:-apple-system,'Malgun Gothic',sans-serif;margin:16px}}
-h1{{font-size:18px}} p{{color:var(--muted);font-size:13px}} .wrap{{overflow-x:auto}}
+h1{{font-size:18px}} h2{{font-size:15px;margin-top:24px}} p{{color:var(--muted);font-size:13px}} .wrap{{overflow-x:auto}}
 table{{border-collapse:collapse;font-size:12px;white-space:nowrap}} th,td{{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right}}
-th{{position:sticky;top:0;background:var(--bg)}} td:nth-child(-n+3),th:nth-child(-n+3){{text-align:left}}
-tr.alert td{{background:var(--alert)}} tr.mismatch td{{background:var(--mis)}} tr.alert.mismatch td{{background:var(--alert)}}
-h2{{font-size:15px;margin-top:24px}} table.desc{{white-space:normal}} table.desc td,table.desc th{{text-align:left;vertical-align:top;max-width:420px}}
+th{{position:sticky;top:0;background:var(--bg)}} td:nth-child(-n+4),th:nth-child(-n+4){{text-align:left}}
+tr.up td{{background:var(--up)}} tr.down td{{background:var(--down)}} tr.review td{{background:var(--review)}} tr.hold td{{background:var(--hold)}}
+table.desc{{white-space:normal}} table.desc td,table.desc th{{text-align:left;vertical-align:top;max-width:420px}}
 </style></head><body><h1>{html.escape(title)}</h1>
-<p>등급별 정렬. 대표 예상 매출은 E = 드라이버·B2·TS 세 예측의 기하평균 (로그 성장률 평균), M4 는 보조 열. 서프라이즈(nsur_drv)·충격 경보는 M4 기준.
-차이 = 예상 매출 / 최신 컨센서스 - 1 (2b 검증에서 Q2 미달로 주 신호는 nsur_drv 유지, 참고 열).
-붉은 줄 = 충격 경보, 노란 줄 = drv 방향과 E 방향 불일치. 성장률은 전년 동기 대비 단순 성장률 (exp(g)-1).
-CSV 의 g_* 열은 로그 차분 ln(예상 / 전년 동기), *_pct 열이 단순 성장률(%). 차이 크기: 소 &lt; 2.44% &le; 중 &lt; 7.33% &le; 대.
-열 설명은 같은 생성 시각의 radar_columns_*.csv. 등급은 표시용이며 계산에 쓰지 않음.</p>
-<div class="wrap"><table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table></div>
-{desc_html(list(tab.columns))}</body></html>"""
+<h2>판단</h2><p>{html.escape(output.rule_summary())}</p>
+{_table_html(judge, "judge", decision_class)}
+<h2>레이더 전체</h2><p>열 이름 규칙: rev_ 원, jo_ 조원, g_ 로그 성장률, *_pct %, gap_*_pct 차이 %, dir_ 방향 (+/-/공란), agree_ 일치, z_ 표준화 값,
+spread_ 구성 불일치, shock_ 충격 경보 계산 값, flag_ 표시 (켜지면 사유), drv_ 드라이버 흐름. 행 색: 초록 후보(상향), 붉은 후보(하향), 노랑 검토, 회색 보류.</p>
+{_table_html(out, "", decision_class)}
+{desc_html(list(out.columns))}</body></html>"""
+
+
+def outputs(res: Dict) -> Dict:
+    """내부 표 -> 출력 표·판단 표 (판단·변수설명은 내부용)."""
+    out = output.to_output(res["table"])
+    return {"out": out, "judge": output.judgement(out)}
 
 
 def save(res: Dict) -> Dict:
     stamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
     d = output_path("radar", res["quarter"])
-    csv = d / f"radar_{res['quarter']}_{stamp}.csv"
-    htm = d / f"radar_{res['quarter']}_{stamp}.html"
+    base = f"radar_{res['quarter']}_{stamp}"
+    csv, dec, htm, xlsx = d / f"{base}.csv", d / f"{base}_decision.csv", d / f"{base}.html", d / f"{base}.xlsx"
     chk = d / f"datacheck_{res['quarter']}_{stamp}.csv"
     cols = d / f"radar_columns_{res['quarter']}_{stamp}.csv"
-    xlsx = d / f"radar_{res['quarter']}_{stamp}.xlsx"
-    for f in (csv, htm, chk, cols, xlsx):
+    for f in (csv, dec, htm, chk, cols, xlsx):
         if f.exists():
             raise FileExistsError(f)
-    desc = coldesc.table(list(res["table"].columns))          # 설명이 없는 열이 있으면 아무것도 쓰기 전에 멈춤
-    coldesc.unused(res["table"].columns)
-    res["table"].to_csv(csv, index=False, encoding="utf-8-sig")
+    o = outputs(res)
+    out, judge = o["out"], o["judge"]
+    desc = coldesc.table(list(out.columns))                   # 설명이 없는 열이 있으면 아무것도 쓰기 전에 멈춤
+    coldesc.table(list(judge.columns))
+    coldesc.unused(out.columns)
+    out.to_csv(csv, index=False, encoding="utf-8-sig")
+    judge.to_csv(dec, index=False, encoding="utf-8-sig")
     res["checks"].to_csv(chk, index=False, encoding="utf-8-sig")
     desc.to_csv(cols, index=False, encoding="utf-8-sig")
-    excel.to_xlsx(res["table"], xlsx)
-    htm.write_text(to_html(res["table"], f"fdriver 레이더 {res['quarter']} (기준일 {res['t'].date()}, 생성 {stamp})"),
+    excel.to_xlsx(out, xlsx, judge=judge)
+    htm.write_text(to_html(out, judge, f"fdriver 레이더 {res['quarter']} (기준일 {res['t'].date()}, 생성 {stamp})"),
                    encoding="utf-8")
-    return {"csv": csv, "html": htm, "xlsx": xlsx, "datacheck": chk, "columns": cols, "stamp": stamp}
+    return {"csv": csv, "decision": dec, "html": htm, "xlsx": xlsx, "datacheck": chk, "columns": cols, "stamp": stamp,
+            "judge": judge}
 
 
 def main(argv=None):
@@ -398,9 +410,11 @@ def main(argv=None):
     res = build(a.quarter, a.asof)
     paths = save(res)
     pd.set_option("display.width", 250)
-    print(paths)
-    print(res["table"][["grade", "name", "asof_date", "g_E", "g_M4", "g_B2", "nsur_drv", "agree", "shock_alert",
-                        "warnings", "announce_date"]].to_string(index=False))
+    print({k: v for k, v in paths.items() if k != "judge"})
+    j = paths["judge"]
+    print(output.decision_counts(j).to_string())
+    print(j[["decision", "decision_reason", "name", "jo_E", "jo_cons", "gap_E_vs_cons_pct", "flag_shock",
+             "flag_E_spread"]].to_string(index=False))
 
 
 if __name__ == "__main__":

@@ -168,9 +168,10 @@ class TestRadarConsensus(unittest.TestCase):
         from DATA.fdriver.radar import build as B
         from DATA.fdriver.radar import record as rec
         from DATA.fdriver.radar.coldesc import COLDESC
+        internals = {d["internal"] for d in COLDESC.values()}               # v2: 키는 출력 이름, 내부 이름은 'internal'
         for c in ("consensus", "consensus_asof", "gap_E", "gap_M4", "gap_dir", "gap_size", "g_C_pct", "g_E_pct", "g_M4_pct"):
             self.assertIn(c, B.COLUMNS)
-            self.assertTrue(COLDESC.get(c))
+            self.assertIn(c, internals)
         for c in ("g_E", "g_M4", "g_B2", "g_TS"):
             self.assertTrue(COLDESC[c]["unit"].startswith("로그"))
         self.assertIn("gap_M4", rec.NUM_COLS)

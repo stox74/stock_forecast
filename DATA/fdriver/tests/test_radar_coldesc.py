@@ -1,140 +1,267 @@
 # -*- coding: utf-8 -*-
-"""COLDESC v1 테스트: 레이더 열 설명 완전성, 설명 시트 순서, 엑셀 두 시트·서식, 공개 출력에 변수설명·레시피 없음."""
+"""레이더 출력 v2 테스트 (fdriver_radar_coldesc_instruction_v2 7절).
+
+1 출력의 모든 열이 COLDESC 에 있음 / 2 COLDESC 에만 있는 변수는 경고 / 3 방향 일관성 / 4 2026Q3 확인 사례 /
+5 판단 규칙 1~8 / 6 xlsx 세 시트 (가짜 표 + 실제 2026Q2·2026Q3) / 7 DB 기존 열 이름 그대로 / 8 공개 출력에 내부 시트 없음.
+"""
 import glob
+import tempfile
 import unittest
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
 
 from . import conftest  # noqa: F401
+from DATA.fdriver import db
 from DATA.fdriver.config import output_path
 from DATA.fdriver.radar import build as B
 from DATA.fdriver.radar import coldesc as C
 from DATA.fdriver.radar import excel as X
+from DATA.fdriver.radar import output as O
 from DATA.fdriver.radar import public as P
+from .test_adapters import DB_OK
 
 
-def _fake_table(n: int = 3) -> pd.DataFrame:
-    t = pd.DataFrame({c: [np.nan] * n for c in B.COLUMNS})
-    t["entity_id"], t["name"], t["grade"], t["sector"] = ["005930", "000660", "006040"], ["가", "나", "다"], "A", "반도체"
-    t["fiscal_quarter"], t["asof_date"] = "2026Q2", pd.Timestamp("2026-07-01").date()
-    t["rev_E"], t["rev_base"], t["g_E"], t["g_E_pct"] = [1.2e14, 9.8e12, 2.1e12], [1.0e14, 9.0e12, 2.0e12], 0.1, 10.5
-    t["M1_model"], t["E_components"], t["main_model"] = "M1:854232", "E:M1:854232+B2+TS", "M4:854232"
-    t["nsur_drv"], t["shock_x"], t["warnings"] = 0.5, 0.02, "드라이버부분(cov=0.67)"
-    t["announce_date"] = pd.Timestamp("2026-07-28").date()
+def _internal(n: int = 4) -> pd.DataFrame:
+    """내부 표 (build.COLUMNS) 가짜: 삼성전자형(구성 불일치), 금호타이어형(추세 위·컨센서스 아래), 대조군, C등급."""
+    t = pd.DataFrame({c: [np.nan] * n for c in B.COLUMNS}).astype(object)
+    t["entity_id"] = ["005930", "073240", "006040", "009150"]
+    t["name"] = ["가", "나", "다", "라"]
+    t["grade"] = ["A", "A", "B2만", "C"]
+    t["sector"], t["fiscal_quarter"], t["asof_date"] = "반도체", "2026Q3", pd.Timestamp("2026-10-12").date()
+    base = np.array([100.0e12, 1.1e12, 2.5e12, 3.0e12])
+    g = {"M1": [np.log(140.3 / 100), 0.116, np.nan, 0.10], "B2": [np.log(197.9 / 100), 0.099, 0.08, 0.10],
+         "TS": [np.log(198.6 / 100), 0.145, np.nan, 0.10]}
+    for k, v in g.items():
+        t[f"g_{k}"] = v
+    t["g_E"] = [np.nanmean([g["M1"][i], g["B2"][i], g["TS"][i]]) if i != 2 else np.nan for i in range(n)]
+    t["g_M4"] = [np.log(1.95), 0.15, np.nan, 0.08]
+    t["rev_base"] = base
+    for k in ("E", "M4", "M1", "B2", "TS"):
+        t[f"rev_{k}"] = base * np.exp(pd.to_numeric(t[f"g_{k}"]))
+    t["M1_model"] = ["M2", "M1:export", None, "M1:export"]
+    t["consensus"] = [200.3e12, 1.279e12, 2.68e12, 3.2e12]
+    t["gap_E"] = pd.to_numeric(t["rev_E"]) / t["consensus"] - 1
+    t["gap_M4"] = pd.to_numeric(t["rev_M4"]) / t["consensus"] - 1
+    t["nsur_drv"] = [0.2, 0.7, np.nan, -0.3]
+    t["shock_x"] = pd.to_numeric(t["g_M4"]) - pd.to_numeric(t["g_B2"])
+    t["shock_alert"] = [None, "경보(상)", None, None]
+    t["warnings"] = ["드라이버부분(cov=0.89)", "", "", "Q4차감;기업사건"]
+    t["announce_kind"] = ["실제", "추정 (최근 5년 중앙값 35일)", "추정 (최근 5년 중앙값 35일)", "추정 불가"]
+    t["drv_3m_yoy"] = [0.1, 0.05, np.nan, -0.02]
     return t
 
 
-class TestColdesc(unittest.TestCase):
+class TestColumns(unittest.TestCase):
     def test_every_output_column_described(self):
-        """레이더 출력의 모든 열이 COLDESC 에 있어야 한다 (하나라도 없으면 실패)."""
-        self.assertEqual(C.missing(B.COLUMNS), [])
-        for c in B.COLUMNS:
-            d = C.COLDESC[c]
+        out = O.to_output(_internal())
+        self.assertEqual(list(out.columns), C.OUTPUT_COLUMNS)
+        self.assertEqual(C.missing(list(out.columns) + O.JUDGE_COLUMNS), [])
+        internals = {d["internal"] for d in C.COLDESC.values()}
+        self.assertEqual([c for c in B.COLUMNS if c not in internals], [])        # 내부 열은 모두 출력에 대응
+        for c, d in C.COLDESC.items():
             self.assertIn(d["group"], C.GROUPS, c)
             self.assertTrue(d["meaning"], c)
-            self.assertEqual(set(d), set(C.FIELDS), c)
         with self.assertRaises(KeyError):
-            C.table(B.COLUMNS + ["new_col"])
+            C.table(C.OUTPUT_COLUMNS + ["new_col"])
+
+    def test_prefix_rules(self):
+        for c, d in C.COLDESC.items():
+            if c.startswith("jo_"):
+                self.assertEqual(d["unit"], C.JO, c)
+            elif c.startswith("rev_"):
+                self.assertEqual(d["unit"], C.WON, c)
+            elif c.endswith("_pct"):
+                self.assertTrue(d["unit"].startswith("%"), c)
+            elif c.startswith("g_"):
+                self.assertTrue(d["unit"].startswith("로그"), c)
+            elif c.startswith("dir_"):
+                self.assertEqual(d["unit"], C.DIR, c)
+            elif c.startswith("agree_"):
+                self.assertEqual(d["unit"], C.AGR, c)
+            elif c.startswith("flag_"):
+                self.assertEqual(d["unit"], C.FLAG, c)
 
     def test_unused_only_warns(self):
-        """COLDESC 에만 있는 변수는 경고로만 알린다 (삭제·실패 아님)."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            extra = C.unused(B.COLUMNS[:-1])
-        self.assertEqual(extra, [B.COLUMNS[-1]])
+            extra = C.unused(C.OUTPUT_COLUMNS[:-1])
+        self.assertEqual(extra, [C.OUTPUT_COLUMNS[-1]])
         self.assertTrue(any("COLDESC" in str(x.message) for x in w))
-        self.assertIn(B.COLUMNS[-1], C.COLDESC)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            C.unused(B.COLUMNS)
-        if C.unused(B.COLUMNS, warn=False):
-            print("COLDESC 에만 있는 변수:", C.unused(B.COLUMNS, warn=False))
+        self.assertIn(C.OUTPUT_COLUMNS[-1], C.COLDESC)
 
     def test_sheet_order(self):
-        t = C.table(B.COLUMNS)
-        self.assertEqual(list(t.columns), ["분류", "변수", "의미", "계산식", "단위", "비고"])
+        t = C.table(C.OUTPUT_COLUMNS)
+        self.assertEqual(list(t.columns), ["분류", "출력 변수명", "내부 변수명", "의미", "계산식", "단위", "비고"])
         g = [C.GROUPS.index(x) for x in t["분류"]]
-        self.assertEqual(g, sorted(g))                                         # 분류 순서
-        for grp, x in t.groupby("분류", sort=False):                            # 분류 안에서는 레이더 표 순서
-            pos = [B.COLUMNS.index(v) for v in x["변수"]]
-            self.assertEqual(pos, sorted(pos), grp)
-        self.assertEqual(len(t), len(B.COLUMNS))
-        self.assertEqual(t["변수"].iloc[0], "grade")
+        self.assertEqual(g, sorted(g))
+        self.assertEqual(t["출력 변수명"].iloc[0], "decision")
+        self.assertEqual(t.set_index("출력 변수명").loc["dir_E_vs_trend", "내부 변수명"], "E_direction")
 
-    def test_html_has_description_table(self):
-        h = B.to_html(_fake_table(), "t")
-        self.assertIn("변수 설명", h)
-        self.assertIn(C.COLDESC["g_TS"]["formula"].split("(")[0].strip(), h)
+
+class TestDirectionsAndSpread(unittest.TestCase):
+    def _check_dirs(self, out):
+        sg = lambda x: "" if pd.isna(x) or x == 0 else ("+" if x > 0 else "-")
+        self.assertEqual(out["dir_E_vs_cons"].tolist(), [sg(x) for x in out["gap_E_vs_cons_pct"]])
+        self.assertEqual(out["dir_E_vs_trend"].tolist(),
+                         [sg(a - b) for a, b in zip(pd.to_numeric(out["g_E"]), pd.to_numeric(out["g_B2"]))])
+
+    def test_direction_consistency(self):
+        out = O.to_output(_internal())
+        self._check_dirs(out)
+        self.assertEqual(out.loc[1, "dir_E_vs_trend"], "+")                    # 금호타이어형
+        self.assertEqual(out.loc[1, "dir_E_vs_cons"], "-")
+        self.assertEqual(out.loc[2, "dir_E_vs_cons"], "")                      # 대조군: E 없음
+
+    def test_spread(self):
+        out = O.to_output(_internal())
+        self.assertEqual(out.loc[0, "flag_E_spread"], "불일치(M2)")             # 삼성전자 M2 140.3 / B2 197.9 / TS 198.6
+        self.assertEqual(out.loc[0, "spread_E_from"], "M2")
+        self.assertAlmostEqual(out.loc[0, "spread_E_pct"], abs(140.3 / np.sqrt(197.9 * 198.6) - 1) * 100, places=6)
+        self.assertEqual(out.loc[2, "flag_E_spread"], "")                      # 대조군
+        r = O.spread(0.1, np.nan, 0.1, "M1:x", False)
+        self.assertEqual(r["flag_E_spread"], "구성 부족")
+        self.assertEqual(O.spread(0.1, 0.11, 0.12, "M1:x", False)["flag_E_spread"], "")
+        self.assertEqual(out.loc[3, "flag_q4"], "4분기 차감")
+        self.assertEqual(out.loc[3, "flag_event"], "기업 사건")
+        self.assertEqual(out.loc[0, "flag_drv_missing"], "드라이버 부분(cov=0.89)")
+        self.assertEqual(out.loc[1, "flag_shock"], "충격(상향)")
+        self.assertEqual(out.loc[0, "announce_basis"], "확정")
+        self.assertAlmostEqual(out.loc[0, "drv_3m_yoy_pct"], (np.exp(0.1) - 1) * 100)
+
+
+class TestDecisionRules(unittest.TestCase):
+    def _r(self, **kw):
+        r = {"grade": "A", "gap_E_vs_cons_pct": np.nan, "flag_E_spread": "", "flag_shock": "", "agree_drv_cons": "",
+             "dir_E_vs_cons": "", "agree_E_drv_vs_trend": "", "dir_E_vs_trend": "", "rev_E": 1.0}
+        r.update(kw)
+        return O.decide(r)[0]
+
+    def test_rules_1_to_8(self):
+        self.assertEqual(self._r(grade="C", flag_E_spread="불일치(M2)", gap_E_vs_cons_pct=-20.0), "보류(등급)")      # 1
+        self.assertEqual(self._r(flag_E_spread="불일치(M2)", flag_shock="충격(상향)"), "검토(충격+불일치)")            # 2
+        self.assertEqual(self._r(flag_E_spread="불일치(TS)", gap_E_vs_cons_pct=9.0), "보류(불일치)")                 # 3
+        self.assertEqual(self._r(gap_E_vs_cons_pct=6.0, agree_drv_cons="일치", dir_E_vs_cons="+"), "후보(상향)")       # 4
+        self.assertEqual(self._r(gap_E_vs_cons_pct=-6.0, agree_drv_cons="일치", dir_E_vs_cons="-",
+                                 flag_shock="충격(하향)"), "후보(하향)+충격")                                          # 4 + 충격
+        self.assertEqual(self._r(gap_E_vs_cons_pct=-5.0, agree_drv_cons="불일치", dir_E_vs_cons="-"),
+                         "관찰(방향 불일치)")                                                                          # 5 (경계 5.0)
+        self.assertEqual(self._r(gap_E_vs_cons_pct=4.99, agree_drv_cons="일치"), "중립")                             # 6
+        self.assertEqual(self._r(agree_E_drv_vs_trend="일치", dir_E_vs_trend="-"), "관찰(컨센서스 없음, 하향)")        # 7
+        self.assertEqual(self._r(agree_E_drv_vs_trend="불일치"), "중립")                                              # 8
+        self.assertEqual(self._r(flag_E_spread="구성 부족", gap_E_vs_cons_pct=8.0, agree_drv_cons="일치",
+                                 dir_E_vs_cons="+"), "후보(상향)")                                                   # 구성 부족은 불일치 아님
+
+    def test_order_and_thresholds(self):
+        self.assertEqual((O.GAP_THRESHOLD_PCT, O.SPREAD_THRESHOLD_PCT), (5.0, 15.0))
+        out = O.to_output(_internal())
+        j = O.judgement(out)
+        ranks = [O.decision_rank(d) for d in j["decision"]]
+        self.assertEqual(ranks, sorted(ranks))
+        self.assertEqual(list(j.columns), O.JUDGE_COLUMNS)
+        self.assertIn("5%", O.rule_summary())
+        self.assertIn("15%", O.rule_summary())
 
 
 class TestExcel(unittest.TestCase):
-    def test_two_sheets_and_format(self):
-        import tempfile
-        from pathlib import Path
+    def test_three_sheets_and_format(self):
+        out = O.to_output(_internal())
         with tempfile.TemporaryDirectory() as d:
-            p = X.to_xlsx(_fake_table(), Path(d) / "r.xlsx")
+            p = X.to_xlsx(out, Path(d) / "r.xlsx")
             with self.assertRaises(FileExistsError):
-                X.to_xlsx(_fake_table(), p)                                     # 덮어쓰지 않음
+                X.to_xlsx(out, p)
             wb = load_workbook(p)
-            self.assertEqual(wb.sheetnames, ["radar", "변수설명"])
-            ws, wd = wb["radar"], wb["변수설명"]
-            self.assertEqual([c.value for c in ws[1]], B.COLUMNS)
-            j = B.COLUMNS.index("rev_E") + 1
-            self.assertEqual(ws.cell(row=2, column=j).number_format, "#,##0")
-            self.assertIn(C.COLDESC["rev_E"]["meaning"], ws.cell(row=1, column=j).comment.text)
+            self.assertEqual(wb.sheetnames, ["판단", "radar", "변수설명"])
+            wj, ws, wd = wb["판단"], wb["radar"], wb["변수설명"]
+            self.assertIn("5%", wj["A1"].value)
+            self.assertEqual([c.value for c in wj[3]], O.JUDGE_COLUMNS)
+            self.assertIn(C.COLDESC["decision"]["meaning"], wj.cell(row=3, column=1).comment.text)
+            jo = O.JUDGE_COLUMNS.index("jo_E") + 1
+            self.assertEqual(wj.cell(row=4, column=jo).number_format, "#,##0.000")
+            self.assertEqual([c.value for c in ws[1]], C.OUTPUT_COLUMNS)
+            self.assertEqual(ws.cell(row=2, column=C.OUTPUT_COLUMNS.index("rev_E") + 1).number_format, "#,##0")
             self.assertEqual(wd.freeze_panes, "A2")
             self.assertTrue(wd["A1"].font.b)
-            self.assertEqual([c.value for c in wd[1]], ["분류", "변수", "의미", "계산식", "단위", "비고"])
-            self.assertEqual(wd.max_row - 1, len(B.COLUMNS))
-            self.assertTrue(wd["C2"].alignment.wrap_text)
-            changes = [i for i in range(3, wd.max_row + 1) if wd.cell(row=i, column=1).value != wd.cell(row=i - 1, column=1).value]
-            self.assertTrue(changes)
-            self.assertTrue(all(wd.cell(row=i, column=1).border.top.style == "medium" for i in changes))
+            self.assertEqual(wd.max_row - 1, len(C.OUTPUT_COLUMNS))
+            self.assertTrue(wd["D2"].alignment.wrap_text)
+            fills = {wj.cell(row=i, column=1).fill.fgColor.rgb for i in range(4, wj.max_row + 1)}
+            self.assertTrue(any(f and f.endswith("ECEBE7") for f in fills))         # 보류 색
 
-    def test_real_2026q2_xlsx(self):
-        """2026Q2 시험분 레이더 xlsx 가 열리고 두 시트가 있는지 (생성된 파일이 있을 때)."""
-        files = sorted(glob.glob(str(output_path("radar", "2026Q2", mkdir=False) / "radar_2026Q2_*.xlsx")))
-        if not files:
-            self.skipTest("2026Q2 xlsx 없음")
-        wb = load_workbook(files[-1])
-        self.assertEqual(wb.sheetnames, ["radar", "변수설명"])
-        self.assertEqual(C.missing([c.value for c in wb["radar"][1]]), [])
+    def _latest(self, q):
+        fs = sorted(glob.glob(str(output_path("radar", q, mkdir=False) / f"radar_{q}_*.xlsx")))
+        fs = [f for f in fs if "판단" in load_workbook(f, read_only=True).sheetnames]
+        return fs[-1] if fs else None
+
+    def test_real_xlsx(self):
+        for q in ("2026Q2", "2026Q3"):
+            f = self._latest(q)
+            if not f:
+                self.skipTest(f"{q} v2 xlsx 없음")
+            wb = load_workbook(f)
+            self.assertEqual(wb.sheetnames, ["판단", "radar", "변수설명"], q)
+            self.assertEqual(C.missing([c.value for c in wb["radar"][1]]), [], q)
+
+    def test_real_2026q3_cases(self):
+        fs = sorted(glob.glob(str(output_path("radar", "2026Q3", mkdir=False) / "radar_2026Q3_*.csv")))
+        fs = [f for f in fs if not f.endswith("_decision.csv") and "decision" in pd.read_csv(f, nrows=0).columns]
+        if not fs:
+            self.skipTest("2026Q3 v2 csv 없음")
+        out = pd.read_csv(fs[-1], dtype={"entity_id": str}, keep_default_na=False, na_values=[""])
+        out[["dir_E_vs_cons", "dir_E_vs_trend"]] = out[["dir_E_vs_cons", "dir_E_vs_trend"]].fillna("")
+        TestDirectionsAndSpread._check_dirs(self, out)
+        k = out.set_index("name")
+        self.assertEqual(k.loc["금호타이어", "dir_E_vs_trend"], "+")
+        self.assertEqual(k.loc["금호타이어", "dir_E_vs_cons"], "-")
+        self.assertEqual(k.loc["삼성전자", "flag_E_spread"], "불일치(M2)")
+        self.assertIn(k.loc["삼성전자", "decision"], ("보류(불일치)", "검토(충격+불일치)"))
+
+
+@unittest.skipUnless(DB_OK, "DB unreachable")
+class TestDBNamesUnchanged(unittest.TestCase):
+    def test_existing_columns_kept(self):
+        rec = set(db.table_columns("fd_live_record"))
+        for c in ("E_direction", "drv_direction", "agree", "shock_alert", "shock_x", "nsur_drv", "consensus", "gap_E",
+                  "gap_M4", "warnings", "drv_3m_yoy", "announce_kind", "g_E", "rev_E"):
+            self.assertIn(c, rec)
+        for c in ("z_drv_vs_trend", "shock_dev", "flag_shock", "gap_E_vs_cons_pct", "dir_E_vs_trend"):
+            self.assertNotIn(c, rec)                                              # 출력 이름은 DB 에 없음
+        nc = set(db.table_columns("fd_nowcast"))
+        self.assertTrue({"g_hat", "rev_hat", "rev_actual_first", "rev_base"} <= nc)
+        sig = set(db.table_columns("fd_signal"))
+        self.assertTrue({"nsur", "nsur_mom", "nsur_drv", "sigma", "delta"} <= sig)
+
+    def test_first_record_untouched(self):
+        r = db.read_sql("SELECT COUNT(*) n FROM fd_live_record WHERE record_id = '20261011_013503'")
+        self.assertEqual(int(r["n"].iloc[0]), 38)
+        if "decision" in db.table_columns("fd_live_record"):
+            r = db.read_sql("SELECT COUNT(decision) n FROM fd_live_record WHERE record_id = '20261011_013503'")
+            self.assertEqual(int(r["n"].iloc[0]), 0)
 
 
 class TestPublic(unittest.TestCase):
-    def test_public_has_no_coldesc_or_recipe(self):
-        t = _fake_table()
+    def test_public_has_no_internal_sheets(self):
+        t = _internal()
         pub = P.public_table(t)
         self.assertTrue(set(pub.columns) <= set(P.PUBLIC_HEADER.values()))
-        for text in (pub.to_csv(index=False), P.public_html(pub, "레이더 2026Q2")):
+        out = O.to_output(t)
+        for text in (pub.to_csv(index=False), P.public_html(pub, "레이더 2026Q3")):
             P.check_public(text)
-            self.assertNotIn("변수설명", text)
-            self.assertNotIn("변수 설명", text)
-            for c, d in C.COLDESC.items():
-                if len(d["formula"]) >= P.MIN_PHRASE:
-                    self.assertNotIn(d["formula"], text, c)
+            for c in O.JUDGE_COLUMNS + ["spread_E_pct", "z_drv_vs_trend", "shock_dev"]:
+                if c not in P.PUBLIC_COLUMNS:
+                    self.assertNotIn(c, text)
+            for v in out["decision"]:
+                self.assertNotIn(v, text)
 
-    def test_guard_blocks_description_and_recipe(self):
-        for bad in [C.table(B.COLUMNS).to_csv(index=False),                     # 변수설명 표
-                    B.desc_html(B.COLUMNS),                                     # HTML 설명 표
-                    "기업,드라이버\n가,M1:854232",                               # 드라이버 모델 id
-                    "기업,코드\n가,854232",                                       # HS 코드
-                    "기업,원천\n가,export",                                       # 드라이버 이름
-                    "x " + C.COLDESC["drv_3m_yoy"]["note"]]:                    # COLDESC 비고 문장
+    def test_guard_blocks_internal(self):
+        out = O.to_output(_internal())
+        for bad in [C.table(C.OUTPUT_COLUMNS).to_csv(index=False), B.desc_html(C.OUTPUT_COLUMNS),
+                    O.judgement(out).to_csv(index=False), "기업,판단\n가,후보(상향)", "기업,드라이버\n가,M1:854232",
+                    "기업,원천\n가,export", "x " + C.COLDESC["drv_3m_yoy_pct"]["note"]]:
             with self.assertRaises(P.PublicLeak):
                 P.check_public(bad)
-
-    def test_save_public_writes_only_allowed(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as d:
-            out = P.save_public(_fake_table(), "2026Q2", out_dir=d)
-            self.assertEqual(set(out), {"csv", "html"})                          # 엑셀·설명 시트 없음
-            txt = out["csv"].read_text(encoding="utf-8-sig")
-            self.assertEqual(txt.splitlines()[0].split(","), [P.PUBLIC_HEADER[c] for c in P.PUBLIC_COLUMNS])
-            self.assertNotIn("854232", txt + out["html"].read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 """레이더 공개용 표 (허용 목록 방식). COLDESC v1 에서 새로 만듦 (그전에는 공개 경로와 키워드 차단 테스트가 코드에 없었음).
 
 - PUBLIC_COLUMNS 에 있는 열만 내보낸다 (잠정 목록, 설계실 확정 필요). 모델 구성·드라이버·분모 같은 '레시피' 열은 넣지 않는다.
-- 변수설명(coldesc) 시트·설명 표는 공개 경로에 넣지 않는다. 엑셀은 만들지 않고 CSV·HTML 표만 만든다.
+- 변수설명(coldesc) 시트·설명 표와 판단 시트(v2)는 공개 경로에 넣지 않는다. 엑셀은 만들지 않고 CSV·HTML 표만 만든다.
 - check_public(text): 민감 키워드(드라이버 원천·모델 구성·내부 열 이름)나 COLDESC 의 의미·계산식·비고 문장이 들어 있으면 멈춘다.
   save_public 은 쓰기 전에 CSV·HTML 문자열을 모두 이 검사에 통과시킨다.
 """
@@ -24,7 +24,10 @@ PUBLIC_HEADER = {"name": "기업", "sector": "업종", "fiscal_quarter": "분기
 # 내부 열 이름·원천·모델 구성 (공개 출력에 나오면 안 되는 말)
 SENSITIVE_WORDS = ["HS", "hs_code", "대만", "월매출", "TWSE", "MOPS", "세그먼트", "사업부", "가중치", "weights", "drivers_used",
                    "M1_model", "E_components", "main_model", "nsur", "shock_", "sigma", "delta", "drv_3m", "M4:", "M1:", "M3:",
-                   "변수설명", "변수 설명", "계산식", "COLDESC", "kr_revenue_consensus", "fd_nowcast"]
+                   "변수설명", "변수 설명", "계산식", "COLDESC", "kr_revenue_consensus", "fd_nowcast",
+                   # v2 판단 시트·출력 이름 (내부용)
+                   "decision", "판단", "후보(", "검토(", "관찰(", "보류(", "spread_", "flag_", "dir_", "agree_", "z_drv",
+                   "gap_E", "jo_cons", "불일치"]
 MIN_PHRASE = 12                          # COLDESC 문장 검사: 이 길이 이상 문장만 (짧은 단어 오탐 방지)
 
 
