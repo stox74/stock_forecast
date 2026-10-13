@@ -62,7 +62,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--quarter", required=True)
     a = ap.parse_args(argv)
-    ids = db.read_sql(f"SELECT DISTINCT record_id FROM `{T_RECORD}` WHERE fiscal_quarter = :q AND decision IS NULL",
+    has_v2 = "decision" in db.table_columns(T_RECORD)          # v2 열은 다음 기록 때 생김
+    cond = " AND decision IS NULL" if has_v2 else ""
+    ids = db.read_sql(f"SELECT DISTINCT record_id FROM `{T_RECORD}` WHERE fiscal_quarter = :q{cond}",
                       {"q": a.quarter})["record_id"].tolist()
     d = output_path("radar", a.quarter, "records")
     for rid in ids:
