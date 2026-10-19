@@ -106,7 +106,13 @@ OUTPUT_DIR = BASE_DIR / "output"
 # 수집 대상 기업 (종목코드: 표시용 이름)
 # 대만 시가총액 상위 50개 (2026년 TWSE 가권지수 시총 비중 기준, 전부 상장 sii)
 # 필요 시 자유롭게 추가/삭제하면 됩니다.
+# 대만 월매출 수집 대상 기업 목록 v2
+# - 기존 51개(v1) 유지 + 운송/물류 + 거시·업황 신호용 기업 추가
+# - TPEx(상궤) 상장 종목은 주석으로 표시 (otc 시장 수집 경로 확인 필요)
+# - 추가 종목의 상장시장은 수집 첫 실행 시 로그로 재확인할 것
+
 COMPANIES = {
+    # ===== 기존 v1 목록 =====
     "2330": "TSMC",
     "2308": "Delta Electronics",
     "2454": "MediaTek",
@@ -158,7 +164,67 @@ COMPANIES = {
     "4904": "Far EasTone",
     "1301": "Formosa Plastics",
     "8299": "Phison Electronics",  # TPEx(상궤) 상장 — otc 시장에서 수집됨
+
+    # ===== 추가 1: 운송·물류 (EXPD/CHRW/FDX/UPS, 컨테이너·벌크 운임 신호) =====
+    "2609": "Yang Ming Marine",            # 컨테이너 선사
+    "2615": "Wan Hai Lines",               # 아시아 역내 컨테이너 선사
+    "2637": "Wisdom Marine-KY",            # 벌크선 (BDI 신호)
+    "2606": "U-Ming Marine",               # 벌크선 (철광석·석탄 운송)
+    "2610": "China Airlines",              # 항공 (화물 비중 있으나 여객 혼재)
+    "2618": "EVA Airways",                 # 항공 (화물 비중 있으나 여객 혼재)
+    "5609": "Dimerco Express",             # 포워더 — TPEx(상궤) 상장 추정, EXPD 채택 모형 입력
+    "2636": "T3EX Global",                 # 포워더 — EXPD 채택 모형 입력
+
+    # ===== 추가 2: 메모리·반도체 업황 (MU, WDC, 반도체 사이클) =====
+    "2337": "Macronix",                    # NOR/NAND 플래시
+    "3260": "ADATA Technology",            # 메모리 모듈 — TPEx(상궤), 메모리 현물가 신호
+    "2451": "Transcend Information",       # 메모리 모듈·스토리지
+    "6488": "GlobalWafers",                # 실리콘 웨이퍼 — TPEx(상궤), 반도체 전방 사이클
+    "5347": "Vanguard International",      # 성숙공정 파운드리 — TPEx(상궤)
+    "2379": "Realtek Semiconductor",       # PC·네트워크 IC (소비자 IT 수요)
+    "3034": "Novatek Microelectronics",    # 디스플레이 드라이버 IC (TV·스마트폰)
+    "6415": "Silergy",                     # 아날로그·전력 IC (중국 산업 수요)
+
+    # ===== 추가 3: PC·서버·애플 공급망 (DELL, HPQ, AAPL, SMCI) =====
+    "2353": "Acer",                        # PC 브랜드
+    "2324": "Compal Electronics",          # 노트북 ODM
+    "4938": "Pegatron",                    # 애플 조립
+    "2356": "Inventec",                    # 서버·노트북 ODM
+    "2376": "Gigabyte Technology",         # AI 서버·그래픽카드
+    "2377": "Micro-Star International",    # 게이밍 PC·메인보드
+    "2395": "Advantech",                   # 산업용 PC·IoT (글로벌 산업 사이클)
+
+    # ===== 추가 4: 디스플레이 패널 (패널가 사이클) =====
+    "2409": "AUO",
+    "3481": "Innolux",
+
+    # ===== 추가 5: 산업재·설비투자 (중국·글로벌 capex, 미국 전력망) =====
+    "1590": "Airtac International-KY",     # 공압부품 (중국 제조업 capex 선행)
+    "2049": "Hiwin Technologies",          # 리니어 가이드·로봇 (자동화 투자)
+    "1519": "Fortune Electric",            # 변압기 (미국 전력망 투자, ETN/GEV 신호)
+    "1503": "Shihlin Electric",            # 중전기·변압기
+
+    # ===== 추가 6: 소재 (중국·아시아 경기) =====
+    "2002": "China Steel",                 # 철강
+    "1101": "TCC Group (Taiwan Cement)",   # 시멘트
+    "1326": "Formosa Chemicals & Fibre",   # 석유화학·섬유
+
+    # ===== 추가 7: 미국 소비재 공급망 (NKE, LULU, GAP 등 리테일 수요) =====
+    "9910": "Feng Tay Enterprises",        # 나이키 신발 OEM
+    "9904": "Pou Chen",                    # 나이키·아디다스 신발 OEM
+    "1476": "Eclat Textile",               # 기능성 원단 (룰루레몬 등)
+    "1477": "Makalot Industrial",          # 의류 OEM (GAP·유니클로 등)
+    "9921": "Giant Manufacturing",         # 자전거
+
+    # ===== 추가 8: 대만 내수 =====
+    "2912": "President Chain Store",       # 편의점 (대만 소비)
+    "2207": "Hotai Motor",                 # 토요타 유통 (대만 내구재 소비)
 }
+
+if __name__ == "__main__":
+    # 중복·개수 점검
+    print("총 기업 수:", len(COMPANIES))
+    assert len(COMPANIES) == len(set(COMPANIES.keys())), "중복 티커 존재"
 
 # MOPS 월별 매출 집계 페이지
 # 2024년 사이트 개편 이후 신 도메인(mops)의 정적 페이지는 404이며,
