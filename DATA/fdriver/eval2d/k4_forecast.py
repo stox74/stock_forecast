@@ -48,6 +48,7 @@ from ..nowcast.run import _calendar
 from ..radar import ts as rts
 from ..radar.output import spread
 from . import k3_oprule as K3
+from . import k7_methods as k7
 from .k2_targets import read_adj
 
 log = logging.getLogger(__name__)
@@ -245,8 +246,10 @@ def cost_forecast(s: pd.Series, q: pd.Timestamp) -> (Optional[float], int, str):
 
 # ------------------------------------------------------------------ 한 기업
 def run_entity(row, adj: pd.DataFrame, it: pd.DataFrame, ann: pd.DataFrame, cal, quarters=None,
-               live_t: pd.Timestamp = None) -> list:
-    """quarters 기본 EVAL. live_t 를 주면 실전 모드: 발표일 대신 기준일 live_t 하나로 예측 (announce_basis 'live')."""
+               live_t: pd.Timestamp = None, method_v2: bool = False) -> list:
+    """quarters 기본 EVAL. live_t 를 주면 실전 모드: 발표일 대신 기준일 live_t 하나로 예측 (announce_basis 'live').
+    method_v2=True 면 사전 등록 v2 (k7_methods) 의 SARIMA·ETS·Theta, E5·E4·E5_noM1, gap_E4_vs_B2, OP_hat_E5 를 더한다.
+    기존 열(E, TS, OP_hat 등)의 계산은 바뀌지 않는다."""
     e = row.entity_id
     R_all = adj[adj["entity_id"] == e].set_index("period_end")["revenue_adj"].sort_index()
     a = ann[ann["entity_id"] == e].set_index("period_end")["first_dt"]
@@ -331,6 +334,14 @@ def run_entity(row, adj: pd.DataFrame, it: pd.DataFrame, ann: pd.DataFrame, cal,
                     "E": lvl(g_e), "E_fill": lvl(g_ef), "n_filled": n_filled, "E_spread": sp["spread_E_pct"],
                     "E_spread_from": sp["spread_E_from"] or None, "e_label": e_label[:80],
                     "ts_label": (tsr["label"] or tsr["reason"] or "")[:80], "m1_n_train": n_tr})
+        if method_v2:
+            t3 = k7.ts3(R, q, base)
+            cb = k7.combine(t3["g_SARIMA"], t3["g_ETS"], t3["g_Theta"], g_m1, g_b2, spec is not None)
+            rec.update({**t3, **cb, "method_version": "v2"})
+            for k in ("SARIMA", "ETS", "Theta", "E5", "E4", "E5_noM1"):
+                rec[k] = lvl(rec[f"g_{k}"])
+            rec["gap_E4_vs_B2"] = (cb["g_E4"] - g_b2) if cb["g_E4"] is not None and g_b2 is not None else None
+            rec["gap_E_vs_B2"] = (g_e - g_b2) if g_e is not None and g_b2 is not None else None
         # 영업이익
         E = rec["E"]
         kq = [j for j in items.index if j < q and ann_dt(j)[0] <= t]
@@ -369,6 +380,16 @@ def run_entity(row, adj: pd.DataFrame, it: pd.DataFrame, ann: pd.DataFrame, cal,
                 rec.update({"c_hat": c, "OP_hat": float(E * (1 - c)), "op_n_models": f"c{n3}"})
             else:
                 rec["op_note"] = f"R3 c fail {w3}"
+        if method_v2:
+            # OP_hat_E5: 같은 규칙·같은 계수/비용 예측에 매출 E5 를 넣는다
+            E5 = rec.get("E5")
+            if E5 is not None and rec.get("OP_hat") is not None and pd.notna(rec.get("OP_hat")):
+                if rec.get("op_a") is not None and pd.notna(rec.get("op_a")):
+                    rec["OP_hat_E5"] = float(rec["op_a"] + rec["op_b"] * E5)
+                elif rec.get("cost_ratio_hat") is not None and pd.notna(rec.get("cost_ratio_hat")):
+                    rec["OP_hat_E5"] = float(E5 * (1 - rec["cost_ratio_hat"]) - rec["sga_hat"])
+                elif rec.get("c_hat") is not None and pd.notna(rec.get("c_hat")):
+                    rec["OP_hat_E5"] = float(E5 * (1 - rec["c_hat"]))
         out.append(rec)
     return out
 

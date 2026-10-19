@@ -17,7 +17,10 @@ python -m DATA.fdriver.radar.expand2d --quarter 2026Q3 [--asof YYYY-MM-DD] [--ba
 - 매매 신호: 확대 73곳은 모두 '보류' (K5 판정: D1 성공, D2 실패 -> 레이더 유지, 매매 신호로 쓰지 않음).
   decision = '보류(2d 매매 신호)', decision_reason 에 비교 기준·갭·구성 불일치를 적는다. 기존 39곳 decision 은 그대로.
 - 공개 금지: HS 코드·드라이버명·가중치는 이 출력에도 넣지 않는다 (드라이버 출처 종류만 표시).
-출력: OUTPUT_ROOT/radar/<분기>/radar2d_<분기>_<생성일시>.csv / _decision.csv / .xlsx / .html, radar2d_columns_*.csv
+- v2 (작업 7, 사전 등록 v2): 확대 기업 행은 기업마다 fd_live_2d 의 가장 늦은 스냅샷을 쓴다 (v2 스냅샷이 있으면 v2 중
+  가장 늦은 것). 판단 시트의 주 열은 jo_E5 와 gap_E4_vs_B2_pct, 기존 E·gap_E_vs_B2_pct 는 참고 열.
+  비교 기준: B2 기준이면 gap_E4_vs_B2_pct, 저커버리지 컨센서스 기준이면 E5 대 컨센서스. v2 스냅샷이 없으면 기존 E 기준.
+출력: OUTPUT_ROOT/radar/<분기>/radar2d_v2_<분기>_<생성일시>.csv / _decision.csv / .xlsx / .html, radar2d_v2_columns_*.csv
 """
 import argparse
 import html
@@ -65,10 +68,28 @@ NEW_COLDESC = {
     "flag_jump_2d": coldesc._d("발표일·경고", "flag_jump", "매출 급변 이력 (2d 9절 4)", "2019Q1~2026Q2 전년 대비 2배 초과·"
                                "절반 미만 분기 4개 이상", "1 / 0"),
     "flag_basis_2d": coldesc._d("발표일·경고", "flag_basis", "매출 기준 불일치 표시 (2d 9절 2)", "", "1 / 0"),
+    # 사전 등록 v2 (작업 7): 주 예측 E5, 신호 gap_E4_vs_B2
+    "method_version": coldesc._d("판단", "method_version", "확대 기업 행의 예측 방법 버전 (v2 = E5/E4, 공란·v1 = 기존 E)",
+                                 "fd_live_2d 그 분기 가장 늦은 스냅샷 (v2 가 있으면 v2)", "문자"),
+    "snapshot_run_id": coldesc._d("판단", "run_id", "확대 기업 행이 쓴 fd_live_2d 스냅샷", "", "문자"),
+    "jo_E5": coldesc._d("예측 매출 금액", "E5", "주 예측 E5 (v2): SARIMA·ETS·Theta·M1·B2 기하평균 (ts_only 는 M1 없이 4개)",
+                        "rev_base x exp(로그 성장률 평균)", "조원", "사전 등록 v2 1절"),
+    "jo_E4": coldesc._d("예측 매출 금액", "E4", "E5 에서 B2 를 뺀 기하평균 (신호용)", "", "조원"),
+    "gap_E4_vs_B2_pct": coldesc._d("컨센서스 비교", "gap_E4_vs_B2", "주 신호 (v2): E4 와 B2 의 차이",
+                                   "(exp(ln E4 - ln B2) - 1) x 100", coldesc.PCT, "사전 등록 v2 H2~H4·H7 의 신호"),
+    "jo_SARIMA": coldesc._d("예측 매출 금액", "SARIMA", "SARIMA 예측 (후보 8개 중 AICc 최소)", "", "조원"),
+    "jo_ETS": coldesc._d("예측 매출 금액", "ETS", "ETS 예측 (감쇠 추세 + 계절)", "", "조원"),
+    "jo_Theta": coldesc._d("예측 매출 금액", "Theta", "Theta 예측 (계절 조정 후 가법)", "", "조원"),
+    "ts3_spread_pct": coldesc._d("구성 불일치", None, "시계열 세 모형(SARIMA·ETS·Theta) 예측의 최대-최소 차이",
+                                 "(exp(max g - min g) - 1) x 100", coldesc.PCT, "모형 간 불확실성 참고"),
+    "jo_OP_hat_E5": coldesc._d("예측 매출 금액", "OP_hat_E5", "예상 영업이익 (매출 입력 E5, v2)", "같은 규칙·계수에 E5", "조원"),
+    "op_margin_hat_E5_pct": coldesc._d("예측 성장률 %", None, "예상 영업이익률 (E5 기준)", "OP_hat_E5 / E5 x 100",
+                                       coldesc.PCT),
 }
 DESC = {**coldesc.COLDESC, **NEW_COLDESC}
 NEW_COLUMNS = list(NEW_COLDESC)
-JUDGE_EXTRA = ["radar_group", "coverage_class", "cmp_basis", "gap_cmp_pct", "gap_E_vs_B2_pct", "signal_status",
+JUDGE_EXTRA = ["radar_group", "method_version", "coverage_class", "cmp_basis", "gap_cmp_pct", "jo_E5",
+               "gap_E4_vs_B2_pct", "ts3_spread_pct", "jo_OP_hat_E5", "op_margin_hat_E5_pct", "gap_E_vs_B2_pct", "signal_status",
                "op_rule", "jo_OP_hat", "op_margin_hat_pct", "jo_OP_naive", "op_flag_spread", "op_flag_q4", "flag_jump_2d"]
 
 
@@ -97,6 +118,11 @@ def expand_rows(quarter: str, t: pd.Timestamp) -> pd.DataFrame:
     live = db.read_sql("SELECT * FROM fd_live_2d WHERE quarter = :q", {"q": quarter})
     if live.empty:
         raise RuntimeError(f"fd_live_2d 에 {quarter} 기록이 없음")
+    # 기업마다 가장 늦은 스냅샷 (v2 가 있으면 v2 중 가장 늦은 것)
+    if "method_version" not in live:
+        live["method_version"] = None
+    live["_v2"] = (live["method_version"] == "v2").astype(int)
+    live = live.sort_values(["_v2", "recorded_at"]).drop_duplicates("entity_id", keep="last").reset_index(drop=True)
     mp = db.read_sql("SELECT entity_id, name, source FROM fd_driver_map_2d")
     k1 = k1_table().set_index("ticker")
     q = events.fiscal_quarter_end(quarter)
@@ -142,8 +168,22 @@ def expand_rows(quarter: str, t: pd.Timestamp) -> pd.DataFrame:
     o["coverage_class"] = o["entity_id"].map(k1["coverage_class"])
     o["gap_E_vs_B2_pct"] = (np.exp(n("gap_E_vs_B2")) - 1) * 100
     hc = o["gap_E_vs_cons_pct"].notna()
-    o["cmp_basis"] = np.where(hc, "컨센서스(저커버리지)", "B2")
-    o["gap_cmp_pct"] = np.where(hc, o["gap_E_vs_cons_pct"], o["gap_E_vs_B2_pct"])
+    # v2 열 (주 예측 E5, 주 신호 gap_E4_vs_B2). v2 스냅샷이 없는 기업은 기존 E 기준
+    v2 = live["method_version"].eq("v2")
+    nn = lambda c: pd.to_numeric(live[c], errors="coerce") if c in live else pd.Series(np.nan, index=live.index)
+    o["method_version"] = live["method_version"].fillna("v1")
+    o["snapshot_run_id"] = live["run_id"]
+    for k in ("E5", "E4", "SARIMA", "ETS", "Theta", "OP_hat_E5"):
+        o[f"jo_{k}"] = nn(k) / 1e12
+    o["gap_E4_vs_B2_pct"] = (np.exp(nn("gap_E4_vs_B2")) - 1) * 100
+    g3 = pd.concat([nn("g_SARIMA"), nn("g_ETS"), nn("g_Theta")], axis=1)
+    o["ts3_spread_pct"] = (np.exp(g3.max(axis=1) - g3.min(axis=1)) - 1) * 100
+    o["op_margin_hat_E5_pct"] = nn("OP_hat_E5") / nn("E5") * 100
+    gap_e5_cons = (nn("E5") / pd.to_numeric(o["rev_cons"], errors="coerce") - 1) * 100
+    o["cmp_basis"] = np.where(hc, np.where(v2, "컨센서스(저커버리지, E5)", "컨센서스(저커버리지)"),
+                              np.where(v2, "B2 (E4 신호)", "B2"))
+    o["gap_cmp_pct"] = np.where(hc, np.where(v2, gap_e5_cons, o["gap_E_vs_cons_pct"]),
+                                np.where(v2, o["gap_E4_vs_B2_pct"], o["gap_E_vs_B2_pct"]))
     o["signal_status"] = "보류"
     o["op_rule"] = live["rule"]
     o["jo_OP_hat"] = n("OP_hat") / 1e12
@@ -222,9 +262,9 @@ th{{position:sticky;top:0;background:var(--bg)}} tr.hold td{{background:var(--ho
 def save(out, judge, quarter, t) -> dict:
     stamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
     d = output_path("radar", quarter)
-    base = f"radar2d_{quarter}_{stamp}"
+    base = f"radar2d_v2_{quarter}_{stamp}"
     p = {"csv": d / f"{base}.csv", "decision": d / f"{base}_decision.csv", "xlsx": d / f"{base}.xlsx",
-         "html": d / f"{base}.html", "columns": d / f"radar2d_columns_{quarter}_{stamp}.csv"}
+         "html": d / f"{base}.html", "columns": d / f"radar2d_v2_columns_{quarter}_{stamp}.csv"}
     for f in p.values():
         if f.exists():
             raise FileExistsError(f)
