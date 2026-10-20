@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""2g 레이더 출력 v2 (K8b 4). fd_live_2g 의 기업별 가장 최근 스냅샷(기업 x 분기 Q, Q+1)에
+"""2g 레이더 출력 v3 (K9 5: 참고 열 추가). v2 (K8b 4): fd_live_2g 의 기업별 가장 최근 스냅샷(기업 x 분기 Q, Q+1)에
 2d 확대 73곳을 읽기 전용으로 합친 통합본. DB 쓰기 없음. 금액 단위 억원.
 - 2d 행: fd_live_2d 의 기업별 최신 method_version 'v2' 스냅샷 값을 그대로 옮긴다 (다시 계산하지 않음, Q 한 분기만).
   2d 에 없는 열(OP_hat_alt, 컨센서스, 2g 표시 열)은 비워 둔다.
@@ -10,8 +10,10 @@
 - 공개 출력이라 드라이버 코드·이름(drv_code, m1_source)과 HS 코드는 넣지 않는다.
 
 python -m DATA.fdriver.eval2g.radar_2g [--quarter 2026Q3]
-출력: OneDrive/INVESTMENT/한국주식/fdriver/2g/K8b/radar/ 와 2g/radar/<분기>/
-      radar2g_v2_<분기>_<생성일시>.csv (전체), _decision.csv (판단), .xlsx (판단 | 전체 | 변수설명), .html, _columns.csv
+v3 참고 열 (method_2g_ref_v1): M1_ref, SARIMAX_ref, E5_ref, E6_ref, drv_grade, drv_source, drv_ksic_only, x_src, ref_note.
+  드라이버 코드·이름은 넣지 않는다 (출처 종류만).
+출력: OneDrive/INVESTMENT/한국주식/fdriver/2g/K9/radar/ 와 2g/radar/<분기>/
+      radar2g_v3_<분기>_<생성일시>.csv (전체), _decision.csv (판단), .xlsx (판단 | 전체 | 변수설명), .html, _columns.csv
 """
 import argparse
 import html
@@ -25,7 +27,8 @@ from .. import db
 from ..config import output_path
 from . import common as C
 
-VERSION = "radar2g_v2"
+VERSION = "radar2g_v3"
+COPY_TO = ("2g", "K9", "radar")
 EOK = 1e8
 SIGNAL = "매매 신호 아님(검증 전)"
 GROUP_ORDER = ["레이더39", "정상", "저커버리지", "컨센서스 없음", "2d 확대"]
@@ -65,6 +68,15 @@ COLDESC = {
     "margin_E5_pct": "OP_hat_E5 / E5 (%)",
     "margin_alt_pct": "OP_hat_alt / E5 (%)",
     "margin_naive_pct": "OP_naive / B2 (%)",
+    "drv_grade": "참고 드라이버 등급 (A / B, 승인 아님, method_2g_ref_v1)",
+    "drv_source": "참고 드라이버 출처 종류 (dart / hs_map / ksic / domestic / semi8486)",
+    "drv_ksic_only": "1: 참고 드라이버 근거가 업종코드뿐 (경제적 타당성 미확인)",
+    "M1_ref": "참고: 드라이버 OLS 매출 예측 (억원, 공표된 달만)",
+    "SARIMAX_ref": "참고: 드라이버를 외생 변수로 넣은 SARIMAX 매출 예측 (억원)",
+    "E5_ref": "참고: SARIMA·ETS·Theta·B2·M1_ref 기하평균 (억원)",
+    "E6_ref": "참고: E5_ref 구성 + SARIMAX_ref 기하평균 (억원)",
+    "x_src": "참고: 예측 분기 드라이버 값 출처 (known / known+fill / stored_fc / fill / last30d / known_mean)",
+    "ref_note": "참고 예측이 비었을 때 이유 (drv_data_end: 드라이버 자료가 끝난 달)",
     "flag_b2_jump": "1: B2 성장률이 세 시계열 모형 중앙값과 20%p 넘게 다름 (2g 만)",
     "flag_m1_dir": "1: 드라이버 모형 방향이 나머지 네 모형 모두와 반대 (2g 만)",
     "flag_op_sign": "1: 세 영업이익 예측의 부호가 서로 다름 (2g 만)",
@@ -79,7 +91,8 @@ COLDESC = {
 }
 JUDGE = ["signal", "group_2g", "entity_id", "name", "industry_group", "quarter", "announced", "cmp_basis", "cmp_gap_pct",
          "E5", "cons", "B2", "E3", "E5_yoy_pct", "OP_hat_E5", "OP_hat_alt", "OP_naive", "margin_E5_pct", "rule",
-         "flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_q4", "source"]
+         "flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_q4", "drv_grade", "drv_ksic_only",
+         "M1_ref", "SARIMAX_ref", "E5_ref", "E6_ref", "x_src", "source"]
 
 
 def _latest(d: pd.DataFrame) -> pd.DataFrame:
@@ -126,6 +139,13 @@ def table_2g(d: pd.DataFrame) -> pd.DataFrame:
               "flag_q4"):
         o[c] = num(c)
     o["filter_fail"] = d["entity_id"].map(tg["filter_fail"]).fillna("")
+    for c in ("M1_ref", "SARIMAX_ref", "E5_ref", "E6_ref"):
+        o[c] = num(c) / EOK
+    o["drv_grade"] = d["drv_grade"] if "drv_grade" in d else None
+    o["drv_source"] = d["drv_source_ref"] if "drv_source_ref" in d else None
+    o["drv_ksic_only"] = num("drv_ksic_only")
+    o["x_src"] = d["x_src"] if "x_src" in d else None
+    o["ref_note"] = d["ref_note"] if "ref_note" in d else None
     o["run_id"] = d["run_id"]
     return o
 
@@ -155,6 +175,10 @@ def table_2d(d: pd.DataFrame) -> pd.DataFrame:
     for c in ("flag_jump", "flag_basis", "flag_spread", "flag_q4"):
         o[c] = num(c)
     o["filter_fail"] = ""
+    for c in ("M1_ref", "SARIMAX_ref", "E5_ref", "E6_ref", "drv_ksic_only"):
+        o[c] = np.nan
+    for c in ("drv_grade", "drv_source", "x_src", "ref_note"):
+        o[c] = None
     o["run_id"] = d["run_id"]
     return o
 
@@ -211,7 +235,7 @@ def main(quarter: str = None) -> dict:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = f"{VERSION}_{q0}_{stamp}"
     out = output_path("2g", "radar", q0)
-    title = f"2g 통합 레이더 v2 {q0} (2g 기준일 {d['asof_date'].max()})"
+    title = f"2g 통합 레이더 v3 {q0} (2g 기준일 {d['asof_date'].max()})"
     paths = {"csv": out / f"{stem}.csv", "decision": out / f"{stem}_decision.csv", "xlsx": out / f"{stem}.xlsx",
              "html": out / f"{stem}.html", "columns": out / f"{stem}_columns.csv"}
     o.to_csv(paths["csv"], index=False, encoding="utf-8-sig")
@@ -223,7 +247,7 @@ def main(quarter: str = None) -> dict:
         o.round(2).to_excel(w, sheet_name="전체", index=False)
         desc.to_excel(w, sheet_name="변수설명", index=False)
     paths["html"].write_text(to_html(o, j, title), encoding="utf-8")
-    k8 = output_path("2g", "K8b", "radar")
+    k8 = output_path(*COPY_TO)
     for p in paths.values():
         shutil.copy2(p, k8 / p.name)
     print({k: str(v) for k, v in paths.items()})

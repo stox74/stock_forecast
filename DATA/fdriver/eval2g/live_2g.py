@@ -12,6 +12,7 @@ python -m DATA.fdriver.eval2g.live_2g [--asof YYYY-MM-DD] [--dry] [--no-refresh]
    OP_hat_alt (R1 최근 12분기 OLS, R2 판관비 이상값 대체 후 예측), flag_b2_jump, flag_m1_dir, flag_op_sign.
 5. 컨센서스: Q·Q+1 매출 컨센서스 중 관측일 <= t 최신 (kr_consensus.read_consensus).
    K8b: E3 (SARIMA·ETS·Theta 기하평균) 과 gap_E3_vs_B2 = ln(E3) - ln(B2) 를 더한다.
+   K9: fd_driver_ref_2g A·B 등급 기업에 참고 열 (M1_ref, SARIMAX_ref, E5_ref, E6_ref, x_src) 을 더한다 (eval2g.ref).
 6. 기록: fd_live_2g (entity_id, quarter, run_id) insert_fd_strict. 이미 발표한 기업도 announced_at_snapshot = 1 로 기록.
 """
 import os
@@ -42,6 +43,7 @@ from ..eval2d.k6_live import COLS as V1_COLS, DDL as V1_DDL, T_LIVE as T_2D  # n
 from ..nowcast import features as ft                # noqa: E402
 from ..nowcast.run import _calendar                 # noqa: E402
 from . import common as C                           # noqa: E402
+from . import ref                                   # noqa: E402
 
 log = logging.getLogger(__name__)
 B2_JUMP = 0.20
@@ -53,6 +55,12 @@ G2_COLS = {
     "op_b_alt": "DOUBLE", "sga_hat_alt": "DOUBLE", "n_sga_capped": "INT", "alt_note": "VARCHAR(80)",
     "flag_b2_jump": "TINYINT", "flag_m1_dir": "TINYINT", "flag_op_sign": "TINYINT", "sga_fixed_n": "INT",
     "method_2g_commit": "CHAR(40)", "g_E3": "DOUBLE", "E3": "DOUBLE", "gap_E3_vs_B2": "DOUBLE",
+    # K9 참고 열 (method_2g_ref_v1)
+    "drv_code_ref": "VARCHAR(80)", "drv_source_ref": "VARCHAR(20)", "drv_grade": "VARCHAR(4)", "drv_ksic_only": "TINYINT",
+    "g_M1_ref": "DOUBLE", "M1_ref": "DOUBLE", "m1_ref_cov": "DOUBLE", "g_SARIMAX_ref": "DOUBLE", "SARIMAX_ref": "DOUBLE",
+    "sarimax_order_ref": "VARCHAR(40)", "sarimax_n_train": "INT", "x_src": "VARCHAR(20)", "g_E5_ref": "DOUBLE",
+    "E5_ref": "DOUBLE", "g_E6_ref": "DOUBLE", "E6_ref": "DOUBLE", "ref_note": "VARCHAR(120)",
+    "method_ref_commit": "CHAR(40)",
 }
 DROP_V2 = {"prereg_v2_commit"}
 COLS = V1_COLS + [c for c in V2_COLS if c not in DROP_V2] + list(G2_COLS)
@@ -164,7 +172,8 @@ def post(rec: dict, row, m1, items: pd.DataFrame, R_all: pd.Series, ann_e: pd.Se
 
 
 def forecast_firm(args) -> list:
-    row, adj_e, it_e, ann_e, cal, quarters, t, m1 = args
+    row, adj_e, it_e, ann_e, cal, quarters, t, m1 = args[:8]
+    drv = args[8] if len(args) > 8 else None      # K9 참고 드라이버 {code, source, grade, ksic_only}
     r = SimpleNamespace(**row)
     ann_df = ann_e.reset_index() if len(ann_e) else pd.DataFrame(columns=["entity_id", "period_end", "first_dt"])
     ann_df["entity_id"] = r.entity_id
@@ -185,15 +194,31 @@ def forecast_firm(args) -> list:
         except Exception as ex:  # noqa: BLE001
             rec["alt_note"] = ("post_err " + repr(ex))[:80]
             out.append(rec)
+    if drv is not None:
+        for rec in out:
+            rec.update({"drv_code_ref": drv["code"], "drv_source_ref": drv["source"], "drv_grade": drv["grade"],
+                        "drv_ksic_only": drv["ksic_only"]})
+        ok = [rec for rec in out if rec.get("rev_base") is not None and pd.notna(rec.get("rev_base"))]
+        if ok:
+            try:
+                ref.firm_ref(drv["code"], ok, R_all, ann_e, cal, t)
+            except Exception as ex:  # noqa: BLE001
+                for rec in ok:
+                    rec["ref_note"] = ("ref_err " + repr(ex))[:120]
     return out
 
 
 # ------------------------------------------------------------------ 본체
+def ref_commit() -> str:
+    from .k9_drivers import METHOD_REF_COMMIT
+    return METHOD_REF_COMMIT
+
+
 def code_hash() -> str:
     h = hashlib.sha256()
     base = Path(__file__).resolve().parent
     for f in (base.parent / "eval2d" / "k4_forecast.py", base.parent / "eval2d" / "k7_methods.py",
-              base.parent / "eval2d" / "k3_oprule.py", base / "common.py", base / "live_2g.py"):
+              base.parent / "eval2d" / "k3_oprule.py", base / "common.py", base / "live_2g.py", base / "ref.py"):
         h.update(f.read_bytes())
     return h.hexdigest()
 
@@ -266,6 +291,9 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
     tim["radar_m1"] = time.time() - t0
     # 4. 예측 (병렬)
     fixed_n = fixlog.groupby("entity_id").size() if len(fixlog) else pd.Series(dtype=int)
+    dref = db.read_sql("SELECT entity_id, code, source, grade, ksic_only FROM fd_driver_ref_2g WHERE grade IN ('A', 'B')")
+    dref = {r.entity_id: {"code": r.code, "source": r.source, "grade": r.grade, "ksic_only": int(r.ksic_only)}
+            for r in dref.itertuples()}
     jobs = []
     for r in tg.itertuples():
         row = {"entity_id": r.entity_id, "status": "ts_only", "code": None, "rule": r.rule,
@@ -274,7 +302,7 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
         a_e = adj[adj["entity_id"] == r.entity_id]
         i_e = it[it["entity_id"] == r.entity_id]
         n_e = ann[ann["entity_id"] == r.entity_id].set_index("period_end")["first_dt"]
-        jobs.append((row, a_e, i_e, n_e, cal, [Q, Q1], t, m1.get(r.entity_id)))
+        jobs.append((row, a_e, i_e, n_e, cal, [Q, Q1], t, m1.get(r.entity_id), dref.get(r.entity_id)))
     rows = []
     with ProcessPoolExecutor(max_workers=workers) as ex:
         for k, res in enumerate(ex.map(forecast_firm, jobs, chunksize=2)):
@@ -311,6 +339,7 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
     d["recorded_at"] = datetime.now().replace(microsecond=0)
     d["mapping_file"], d["prereg_commit"], d["method_2g_commit"] = "none(2g)", C.METHOD_COMMIT, C.METHOD_COMMIT
     d["code_sha256"], d["run_id"], d["method_version"] = code_hash(), run_id, "2g_v1"
+    d["method_ref_commit"] = np.where(d["drv_grade"].notna(), ref_commit(), None) if "drv_grade" in d else None
     for c in COLS:
         if c not in d:
             d[c] = np.nan
@@ -332,7 +361,13 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
          "flags": {f: d.groupby("quarter")[f].apply(lambda x: int((x == 1).sum())).to_dict()
                    for f in ("flag_b2_jump", "flag_m1_dir", "flag_op_sign")},
          "events_skipped": ev_skipped, "adj_rows_upserted": adj_upd, "csv": str(csv), "code_sha256": code_hash(),
-         "method_2g_commit": C.METHOD_COMMIT, "ddl_added": [], "rows_written": 0}
+         "method_2g_commit": C.METHOD_COMMIT, "ddl_added": [], "rows_written": 0,
+         "ref": {"firms": int(d.loc[d["drv_grade"].notna(), "entity_id"].nunique()),
+                 "M1_ref": d.groupby("quarter")["g_M1_ref"].apply(lambda x: int(x.notna().sum())).to_dict(),
+                 "SARIMAX_ref": d.groupby("quarter")["g_SARIMAX_ref"].apply(lambda x: int(x.notna().sum())).to_dict(),
+                 "E6_ref": d.groupby("quarter")["g_E6_ref"].apply(lambda x: int(x.notna().sum())).to_dict(),
+                 "x_src": {f"{a}/{b}": int(v) for (a, b), v in d.groupby(["quarter", "x_src"]).size().items()},
+                 "ref_note": d["ref_note"].value_counts().to_dict()}}
     if not dry:
         s["ddl_added"] = ensure_table()
         w = d.copy()
