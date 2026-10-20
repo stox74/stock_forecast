@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""2g 레이더 출력 v3 (K9 5: 참고 열 추가). v2 (K8b 4): fd_live_2g 의 기업별 가장 최근 스냅샷(기업 x 분기 Q, Q+1)에
+"""2g 레이더 출력 v4 (K8c: 매출 단절 표시). v3 (K9 5: 참고 열 추가). v2 (K8b 4): fd_live_2g 의 기업별 가장 최근 스냅샷(기업 x 분기 Q, Q+1)에
 2d 확대 73곳을 읽기 전용으로 합친 통합본. DB 쓰기 없음. 금액 단위 억원.
 - 2d 행: fd_live_2d 의 기업별 최신 method_version 'v2' 스냅샷 값을 그대로 옮긴다 (다시 계산하지 않음, Q 한 분기만).
   2d 에 없는 열(OP_hat_alt, 컨센서스, 2g 표시 열)은 비워 둔다.
@@ -12,8 +12,10 @@
 python -m DATA.fdriver.eval2g.radar_2g [--quarter 2026Q3]
 v3 참고 열 (method_2g_ref_v1): M1_ref, SARIMAX_ref, E5_ref, E6_ref, drv_grade, drv_source, drv_ksic_only, x_src, ref_note.
   드라이버 코드·이름은 넣지 않는다 (출처 종류만).
-출력: OneDrive/INVESTMENT/한국주식/fdriver/2g/K9/radar/ 와 2g/radar/<분기>/
-      radar2g_v3_<분기>_<생성일시>.csv (전체), _decision.csv (판단), .xlsx (판단 | 전체 | 변수설명), .html, _columns.csv
+v4 (method_2g_v1 변경 기록 2026-10-20): flag_struct_break, struct_mode, flag_q4_calc, rev_fixed_n, flag_cons_gap40, data_note.
+  자료 단절(flag_struct_break=1) 행은 판단 시트에서 E5 를 컨센서스가 있을 때만 보이고(비교용), 없으면 비운다.
+출력: OneDrive/INVESTMENT/한국주식/fdriver/2g/K8c/radar/ 와 2g/radar/<분기>/
+      radar2g_v4_<분기>_<생성일시>.csv (전체), _decision.csv (판단), .xlsx (판단 | 전체 | 변수설명), .html, _columns.csv
 """
 import argparse
 import html
@@ -27,8 +29,8 @@ from .. import db
 from ..config import output_path
 from . import common as C
 
-VERSION = "radar2g_v3"
-COPY_TO = ("2g", "K9", "radar")
+VERSION = "radar2g_v4"
+COPY_TO = ("2g", "K8c", "radar")
 EOK = 1e8
 SIGNAL = "매매 신호 아님(검증 전)"
 GROUP_ORDER = ["레이더39", "정상", "저커버리지", "컨센서스 없음", "2d 확대"]
@@ -77,6 +79,13 @@ COLDESC = {
     "E6_ref": "참고: E5_ref 구성 + SARIMAX_ref 기하평균 (억원)",
     "x_src": "참고: 예측 분기 드라이버 값 출처 (known / known+fill / stored_fc / fill / last30d / known_mean)",
     "ref_note": "참고 예측이 비었을 때 이유 (drv_data_end: 드라이버 자료가 끝난 달)",
+    "data_note": "자료 상태: 자료 단절(사건) / 사건 후 구간만 사용 / 4분기 산출 의심 / 4분기 고침",
+    "flag_struct_break": "1: 기업 사건(분할·합병 등) 뒤 매출 기준이 바뀌었고 새 기준 자료가 12분기 미만 (E5 비교용)",
+    "struct_mode": "사건 확인 기업의 처리: post_only (사건 뒤 구간만으로 예측) / compare_only (자료 단절)",
+    "flag_q4_calc": "1: 4분기 매출 산출 이상 의심 (사건 없음, 원천으로 고치지 못함)",
+    "rev_fixed_n": "같은 기준 원천으로 고친 4분기 수",
+    "flag_cons_gap40": "1: |E5 / 컨센서스 - 1| > 40% (업종과 함께 볼 것: 수주 산업 등)",
+    "semi_equip": "1: 반도체 장비·부품 기업 (KSIC 292·2612 또는 주요 제품에 반도체+장비·부품, K9 와 같은 기준). 수주 영향이 큰 업종",
     "flag_b2_jump": "1: B2 성장률이 세 시계열 모형 중앙값과 20%p 넘게 다름 (2g 만)",
     "flag_m1_dir": "1: 드라이버 모형 방향이 나머지 네 모형 모두와 반대 (2g 만)",
     "flag_op_sign": "1: 세 영업이익 예측의 부호가 서로 다름 (2g 만)",
@@ -89,9 +98,11 @@ COLDESC = {
     "signal": "매매 신호 여부",
     "run_id": "스냅샷 실행 번호",
 }
-JUDGE = ["signal", "group_2g", "entity_id", "name", "industry_group", "quarter", "announced", "cmp_basis", "cmp_gap_pct",
+JUDGE = ["signal", "data_note", "group_2g", "entity_id", "name", "industry_group", "quarter", "announced", "cmp_basis",
+         "cmp_gap_pct", "flag_cons_gap40", "semi_equip",
          "E5", "cons", "B2", "E3", "E5_yoy_pct", "OP_hat_E5", "OP_hat_alt", "OP_naive", "margin_E5_pct", "rule",
-         "flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_q4", "drv_grade", "drv_ksic_only",
+         "flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_q4", "flag_struct_break",
+         "flag_q4_calc", "drv_grade", "drv_ksic_only",
          "M1_ref", "SARIMAX_ref", "E5_ref", "E6_ref", "x_src", "source"]
 
 
@@ -146,6 +157,9 @@ def table_2g(d: pd.DataFrame) -> pd.DataFrame:
     o["drv_ksic_only"] = num("drv_ksic_only")
     o["x_src"] = d["x_src"] if "x_src" in d else None
     o["ref_note"] = d["ref_note"] if "ref_note" in d else None
+    for c in ("flag_struct_break", "flag_q4_calc", "rev_fixed_n", "flag_cons_gap40"):
+        o[c] = num(c)
+    o["struct_mode"] = d["struct_mode"] if "struct_mode" in d else None
     o["run_id"] = d["run_id"]
     return o
 
@@ -177,8 +191,10 @@ def table_2d(d: pd.DataFrame) -> pd.DataFrame:
     o["filter_fail"] = ""
     for c in ("M1_ref", "SARIMAX_ref", "E5_ref", "E6_ref", "drv_ksic_only"):
         o[c] = np.nan
-    for c in ("drv_grade", "drv_source", "x_src", "ref_note"):
+    for c in ("drv_grade", "drv_source", "x_src", "ref_note", "struct_mode"):
         o[c] = None
+    for c in ("flag_struct_break", "flag_q4_calc", "rev_fixed_n", "flag_cons_gap40"):
+        o[c] = np.nan
     o["run_id"] = d["run_id"]
     return o
 
@@ -195,6 +211,13 @@ def finish(o: pd.DataFrame) -> pd.DataFrame:
     o["cmp_gap_pct"] = np.where(is2d, o["gap_E4_vs_B2_pct"], np.where(has_c, o["gap_E5_vs_cons_pct"],
                                                                         o["gap_E3_vs_B2_pct"]))
     o["signal"] = SIGNAL
+    o["semi_equip"] = o["entity_id"].isin(semi_set()).astype(int)
+    sb = o["flag_struct_break"] == 1
+    o["data_note"] = np.where(sb, "자료 단절", np.where(o["struct_mode"] == "post_only", "사건 후 구간만 사용",
+                              np.where(o["flag_q4_calc"] == 1, "4분기 산출 의심",
+                                       np.where(o["rev_fixed_n"].fillna(0) > 0, "4분기 고침", ""))))
+    o["cmp_basis"] = np.where(sb & has_c, "컨센서스 (비교용, 자료 단절)", np.where(sb, "자료 단절 (비교 없음)", o["cmp_basis"]))
+    o["cmp_gap_pct"] = np.where(sb & ~has_c, np.nan, o["cmp_gap_pct"])
     missing = [c for c in o.columns if c not in COLDESC]
     if missing:
         raise RuntimeError(f"설명 없는 열: {missing}")
@@ -203,6 +226,18 @@ def finish(o: pd.DataFrame) -> pd.DataFrame:
     o["_a"] = -o["cmp_gap_pct"].abs().fillna(-1)
     o = o.sort_values(["horizon", "_g", "_a", "name"]).drop(columns=["_g", "_a"])
     return o.reset_index(drop=True)
+
+
+def semi_set() -> set:
+    """K9 와 같은 반도체 장비·부품 판정 (k8_drivers.semi_firms). 2d 확대 기업은 2d 제품 표로 본다."""
+    from ..eval2d import k1_survey  # noqa: F401  (경로 확인용)
+    from . import k8_drivers as D
+    rows = pd.read_csv(output_path("2g", "K8", "drivers") / "k8_products.csv", dtype={"ticker": str})
+    r2 = output_path("2d", "K2") / "k2_products.csv"
+    if r2.exists():
+        rows = pd.concat([rows, pd.read_csv(r2, dtype={"ticker": str})], ignore_index=True)
+    k1 = pd.read_csv(output_path("2d", "K1") / "k1_universe.csv", dtype={"ticker": str, "ksic": str})
+    return set(D.semi_firms(k1[["ticker", "ksic"]], rows)["ticker"])
 
 
 def to_html(o: pd.DataFrame, j: pd.DataFrame, title: str) -> str:
@@ -231,11 +266,14 @@ def main(quarter: str = None) -> dict:
     d = latest_2g(quarter)
     q0 = d.loc[d["horizon"] == 0, "quarter"].mode().iloc[0]
     o = finish(pd.concat([table_2g(d), table_2d(latest_2d(q0))], ignore_index=True))
-    j = o[JUDGE]
+    j = o[JUDGE].copy()
+    hide = (o["flag_struct_break"] == 1) & o["cons"].isna()
+    for c in ("E5", "E3", "E5_yoy_pct", "OP_hat_E5", "OP_hat_alt", "margin_E5_pct", "E5_ref", "E6_ref"):
+        j.loc[hide, c] = np.nan
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = f"{VERSION}_{q0}_{stamp}"
     out = output_path("2g", "radar", q0)
-    title = f"2g 통합 레이더 v3 {q0} (2g 기준일 {d['asof_date'].max()})"
+    title = f"2g 통합 레이더 v4 {q0} (2g 기준일 {d['asof_date'].max()})"
     paths = {"csv": out / f"{stem}.csv", "decision": out / f"{stem}_decision.csv", "xlsx": out / f"{stem}.xlsx",
              "html": out / f"{stem}.html", "columns": out / f"{stem}_columns.csv"}
     o.to_csv(paths["csv"], index=False, encoding="utf-8-sig")

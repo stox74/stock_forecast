@@ -12,6 +12,8 @@ python -m DATA.fdriver.eval2g.live_2g [--asof YYYY-MM-DD] [--dry] [--no-refresh]
    OP_hat_alt (R1 최근 12분기 OLS, R2 판관비 이상값 대체 후 예측), flag_b2_jump, flag_m1_dir, flag_op_sign.
 5. 컨센서스: Q·Q+1 매출 컨센서스 중 관측일 <= t 최신 (kr_consensus.read_consensus).
    K8b: E3 (SARIMA·ETS·Theta 기하평균) 과 gap_E3_vs_B2 = ln(E3) - ln(B2) 를 더한다.
+   K8c: fd_rev_check_2g·fd_rev_fix_2g 로 매출 단절 처리 (post_only 절단, 4분기 고침) 와 flag_struct_break·flag_q4_calc·
+        flag_cons_gap40 (method_2g_v1 변경 기록 2026-10-20).
    K9: fd_driver_ref_2g A·B 등급 기업에 참고 열 (M1_ref, SARIMAX_ref, E5_ref, E6_ref, x_src) 을 더한다 (eval2g.ref).
 6. 기록: fd_live_2g (entity_id, quarter, run_id) insert_fd_strict. 이미 발표한 기업도 announced_at_snapshot = 1 로 기록.
 """
@@ -61,6 +63,9 @@ G2_COLS = {
     "sarimax_order_ref": "VARCHAR(40)", "sarimax_n_train": "INT", "x_src": "VARCHAR(20)", "g_E5_ref": "DOUBLE",
     "E5_ref": "DOUBLE", "g_E6_ref": "DOUBLE", "E6_ref": "DOUBLE", "ref_note": "VARCHAR(120)",
     "method_ref_commit": "CHAR(40)",
+    # K8c 매출 단절 (method_2g_v1 변경 기록 2026-10-20)
+    "flag_struct_break": "TINYINT", "struct_mode": "VARCHAR(20)", "struct_start_q": "CHAR(6)", "flag_q4_calc": "TINYINT",
+    "rev_fixed_n": "INT", "flag_cons_gap40": "TINYINT",
 }
 DROP_V2 = {"prereg_v2_commit"}
 COLS = V1_COLS + [c for c in V2_COLS if c not in DROP_V2] + list(G2_COLS)
@@ -282,6 +287,21 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
         adj_new["run_id"] = run_id
         adj_upd = db.write_fd(adj_new, C.T_ADJ, ["entity_id", "period_end"])
     adj = adj_new.drop(columns=["run_id"], errors="ignore")
+    # K8c: 4분기 산출 고침 값 반영, 사건 확인 기업 중 post_only 는 새 기준 시작 전 분기를 뺀다 (fd_rev_adj_2g 는 원래 값 그대로)
+    chk = db.read_sql("SELECT entity_id, mode, start_q, flag_struct_break, flag_q4_calc FROM fd_rev_check_2g")
+    fx = db.read_sql("SELECT entity_id, period_end, revenue_fix FROM fd_rev_fix_2g")
+    if len(fx):
+        fx["period_end"] = pd.to_datetime(fx["period_end"])
+        key = adj.set_index(["entity_id", "period_end"]).index
+        fv = fx.set_index(["entity_id", "period_end"])["revenue_fix"]
+        hit = key.isin(fv.index)
+        adj.loc[hit, "revenue_adj"] = fv.reindex(key[hit]).to_numpy()
+    post = chk[chk["mode"] == "post_only"]
+    for r in post.itertuples():
+        st = pd.Period(r.start_q, freq="Q").to_timestamp(how="end").normalize()
+        adj = adj[~((adj["entity_id"] == r.entity_id) & (adj["period_end"] < st))]
+    chk = chk.set_index("entity_id")
+    fixed_rev = fx.groupby("entity_id").size() if len(fx) else pd.Series(dtype=int)
     it, fixlog = C.items_2g(ids, adj)
     ann = K4.announce_dates(ids, cal)
     tim["data"] = time.time() - t0
@@ -322,8 +342,16 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
         cons.append((c["value"], c["asof"]))
     d["cons"] = [c[0] for c in cons]
     d["cons_asof"] = [pd.Timestamp(c[1]).date() if c[1] is not None else None for c in cons]
+    d["flag_struct_break"] = d["entity_id"].map(chk["flag_struct_break"]).fillna(0).astype(int)
+    d["struct_mode"] = d["entity_id"].map(chk["mode"])
+    d["struct_start_q"] = d["entity_id"].map(chk["start_q"])
+    d["flag_q4_calc"] = d["entity_id"].map(chk["flag_q4_calc"]).fillna(0).astype(int)
+    d["rev_fixed_n"] = d["entity_id"].map(fixed_rev).fillna(0).astype(int)
     d["gap_E5_vs_cons"] = np.where(d["cons"].fillna(0) > 0, np.log(d["E5"].astype(float) / d["cons"].astype(float)),
                                    np.nan)
+    d["flag_cons_gap40"] = np.where(d["cons"].fillna(0) > 0,
+                                    (np.abs(d["E5"].astype(float) / d["cons"].astype(float) - 1) > 0.40).astype(float),
+                                    np.nan)
     tim["consensus"] = time.time() - t0
     # 6. 기록
     a = ann_all.set_index("entity_id")
@@ -362,6 +390,10 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
                    for f in ("flag_b2_jump", "flag_m1_dir", "flag_op_sign")},
          "events_skipped": ev_skipped, "adj_rows_upserted": adj_upd, "csv": str(csv), "code_sha256": code_hash(),
          "method_2g_commit": C.METHOD_COMMIT, "ddl_added": [], "rows_written": 0,
+         "k8c": {"struct_break": d.groupby("quarter")["flag_struct_break"].sum().to_dict(),
+                 "post_only_firms": int((d["struct_mode"] == "post_only").sum() / 2),
+                 "q4_calc": d.groupby("quarter")["flag_q4_calc"].sum().to_dict(),
+                 "cons_gap40": d.groupby("quarter")["flag_cons_gap40"].apply(lambda x: int((x == 1).sum())).to_dict()},
          "ref": {"firms": int(d.loc[d["drv_grade"].notna(), "entity_id"].nunique()),
                  "M1_ref": d.groupby("quarter")["g_M1_ref"].apply(lambda x: int(x.notna().sum())).to_dict(),
                  "SARIMAX_ref": d.groupby("quarter")["g_SARIMAX_ref"].apply(lambda x: int(x.notna().sum())).to_dict(),
