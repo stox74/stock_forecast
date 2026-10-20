@@ -8,7 +8,9 @@
 - 오차: 매출 |ln(실적/예측)| (%), 영업이익 |예측 - 실적| / 최근 4분기(q-4~q-1) 평균 실적 매출 x 100.
 - 요약: 전체·업종·시가총액 구간·집단별 중앙값, 기업별 'E5 가 컨센서스보다 나은 비율', 표시 열별 오차.
   비교는 세 예측이 모두 있는 같은 행끼리. 참고로 2d K5 와 같은 이중 군집 대응 차이 검정도 적는다.
-python -m DATA.fdriver.eval2g.k8_explore [--workers 16]
+K8b: E3 (SARIMA·ETS·Theta) 오차를 더하고, 컨센서스 없는 기업에서 E5·E3 가 B2 보다 나은 비율을 기업별로 낸다.
+  --groups 로 집단을 고르고 --out 으로 폴더(2g/<out>/explore)를 정한다.
+python -m DATA.fdriver.eval2g.k8_explore [--workers 16] [--groups 컨센서스 없음 저커버리지] [--out K8b]
 """
 import os
 
@@ -37,6 +39,7 @@ from .live_2g import post                           # noqa: E402
 
 log = logging.getLogger(__name__)
 OUT = output_path("2g", "K8", "explore")
+NO_CONS = ("컨센서스 없음", "저커버리지")
 NOTE = "탐색적, 판정에 쓰지 않음 (method_2g_v1 커밋 5dc9fdb 뒤 계산)"
 MCAP_BINS = [0, 5e3, 2e4, 1e5, np.inf]          # 억원
 MCAP_LABELS = ["5천억 미만", "5천억~2조", "2조~10조", "10조 이상"]
@@ -89,7 +92,10 @@ def med(g: pd.DataFrame, cols) -> dict:
     return {"n": len(g), **{c: round(float(g[c].median()), 2) for c in cols}}
 
 
-def main(workers: int = 16):
+def main(workers: int = 16, groups=None, out: str = None):
+    global OUT
+    if out:
+        OUT = output_path("2g", out, "explore")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("DATA.fdriver.adapters.revenue").setLevel(logging.ERROR)
     t0 = time.time()
@@ -97,6 +103,8 @@ def main(workers: int = 16):
     tg = C.read_targets()
     rules = db.read_sql(f"SELECT entity_id, rule, flag_spread, flag_q4 FROM `{C.T_RULE}`")
     tg = tg.drop(columns=["rule"]).merge(rules, on="entity_id", how="left")
+    if groups:
+        tg = tg[tg["group_2g"].isin(groups)]
     ids = tg["entity_id"].tolist()
     adj = C.read_adj(ids)
     it, _ = C.items_2g(ids, adj)
@@ -138,7 +146,7 @@ def main(workers: int = 16):
     t_cons = time.time() - t0
     lg = lambda f: (np.abs(np.log(d["rev_actual"].astype(float) / d[f].astype(float))) * 100).where(
         (d["rev_actual"] > 0) & (d[f].astype(float) > 0))
-    for k in ("E5", "cons", "B2", "E", "SARIMA", "ETS", "Theta"):
+    for k in ("E5", "E3", "cons", "B2", "E", "SARIMA", "ETS", "Theta"):
         d[f"err_{k}"] = lg(k)
     for k in ("OP_hat_E5", "OP_hat_alt", "OP_naive"):
         d[f"err_{k}"] = (d[k].astype(float) - d["op_actual"]).abs() / d["rev_avg4"] * 100
@@ -174,6 +182,37 @@ def main(workers: int = 16):
            "m1_rows": int(d["g_M1"].notna().sum()),
            "seconds": {"inputs": round(t_in), "forecast": round(t_fc - t_in), "consensus_actuals": round(t_cons - t_fc),
                        "total": round(time.time() - t0)}, "workers": workers}
+    # K8b: B2 대비 (컨센서스 유무와 무관하게 E5·E3·B2 가 모두 있는 행)
+    vb = d.dropna(subset=["err_E5", "err_E3", "err_B2"]).copy()
+    vb["e5_better_b2"] = (vb["err_E5"] < vb["err_B2"]).astype(int)
+    vb["e3_better_b2"] = (vb["err_E3"] < vb["err_B2"]).astype(int)
+    bc = ["err_E5", "err_E3", "err_B2"]
+    res["vsB2_by_group"] = {k: {**med(x, bc), "e5_better_b2": round(float(x["e5_better_b2"].mean()), 3),
+                                "e3_better_b2": round(float(x["e3_better_b2"].mean()), 3)}
+                            for k, x in vb.groupby("group_2g")}
+    nc = vb[vb["group_2g"].isin(NO_CONS) & vb["cons"].isna()]
+    res["no_cons_rows"] = {**med(nc, bc), "e5_better_b2": round(float(nc["e5_better_b2"].mean()), 3) if len(nc) else None,
+                           "e3_better_b2": round(float(nc["e3_better_b2"].mean()), 3) if len(nc) else None}
+    if len(nc):
+        res["no_cons_test_E5_vs_B2"] = pt(nc, "err_E5", "err_B2")
+        res["no_cons_test_E3_vs_B2"] = pt(nc, "err_E3", "err_B2")
+        res["no_cons_flag_jump0"] = med(nc[nc["flag_jump"] == 0], bc)
+        res["no_cons_by_mcap"] = {k: med(x, bc) for k, x in nc.groupby("mcap_bin")}
+        res["no_cons_flag_b2_jump"] = {str(k): med(x, bc) for k, x in nc.groupby("flag_b2_jump")}
+    fb = vb.groupby(["entity_id", "name", "group_2g", "industry_group", "mcap_bin"]).agg(
+        n=("e5_better_b2", "size"), e5_better_b2_share=("e5_better_b2", "mean"),
+        e3_better_b2_share=("e3_better_b2", "mean"), med_err_E5=("err_E5", "median"), med_err_E3=("err_E3", "median"),
+        med_err_B2=("err_B2", "median"), n_cons=("cons", lambda x: int(x.notna().sum()))).reset_index()
+    res["firm_vsB2"] = {k: {"firms": len(x), "e5_better_ge_half": int((x["e5_better_b2_share"] >= 0.5).sum()),
+                            "e3_better_ge_half": int((x["e3_better_b2_share"] >= 0.5).sum()),
+                            "e5_share_median": round(float(x["e5_better_b2_share"].median()), 3),
+                            "e3_share_median": round(float(x["e3_better_b2_share"].median()), 3)}
+                        for k, x in fb.groupby("group_2g")}
+    fb.to_csv(OUT / "k8_explore_by_firm_vsB2.csv", index=False, encoding="utf-8-sig")
+    ind_b = pd.DataFrame([{"industry_group": k, **med(x, bc), "e5_better_b2": round(float(x["e5_better_b2"].mean()), 3),
+                           "e3_better_b2": round(float(x["e3_better_b2"].mean()), 3)}
+                          for k, x in nc.groupby("industry_group")]).sort_values("n", ascending=False) if len(nc)         else pd.DataFrame()
+    ind_b.to_csv(OUT / "k8_explore_no_cons_by_industry.csv", index=False, encoding="utf-8-sig")
     # 업종·기업 표
     ind = pd.DataFrame([{"industry_group": k, **med(x, rc), "e5_better_share": round(float(x["e5_better"].mean()), 3)}
                         for k, x in rv.groupby("industry_group")]).sort_values("n", ascending=False)
@@ -195,6 +234,9 @@ def main(workers: int = 16):
         pd.DataFrame({"note": [NOTE]}).to_excel(w, sheet_name="안내", index=False)
         ind.to_excel(w, sheet_name="업종별", index=False)
         firm.round(3).to_excel(w, sheet_name="기업별", index=False)
+        fb.round(3).to_excel(w, sheet_name="기업별_B2대비", index=False)
+        if len(ind_b):
+            ind_b.to_excel(w, sheet_name="컨센서스없음_업종별", index=False)
     print(json.dumps(res, ensure_ascii=False, indent=1, default=str))
     return res
 
@@ -202,4 +244,7 @@ def main(workers: int = 16):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--workers", type=int, default=16)
-    main(ap.parse_args().workers)
+    ap.add_argument("--groups", nargs="*", default=None)
+    ap.add_argument("--out", default=None)
+    a = ap.parse_args()
+    main(a.workers, a.groups, a.out)

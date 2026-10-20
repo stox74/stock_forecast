@@ -87,3 +87,22 @@ def items_2g(ids: List[str], adj: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
                             "value": log["resid"], "src": "identity", "sga_fixed": log["sga_fixed"]})
         it = pd.concat([it, add], ignore_index=True)
     return it, log
+
+
+def safe_load_events(ids: List[str], start: str, chunk: int = 50) -> list:
+    """events.build_and_load 를 기업 묶음으로 나눠 부른다. 묶음이 실패하면 기업 하나씩 다시 부르고, 실패한 기업만 건너뛴다.
+    (K8b: 정정공시 원문의 잘못된 날짜 한 건이 전체 적재를 멈춘 일이 있어 2g 에서만 감싼다. events.py 는 바꾸지 않음.)
+    반환: 건너뛴 (기업, 오류) 목록."""
+    from .. import events
+    skipped = []
+    for i in range(0, len(ids), chunk):
+        ch = list(ids[i:i + chunk])
+        try:
+            events.build_and_load(ch, start=start)
+        except Exception:      # noqa: BLE001
+            for e in ch:
+                try:
+                    events.build_and_load([e], start=start)
+                except Exception as ex:  # noqa: BLE001
+                    skipped.append((e, repr(ex)[:120]))
+    return skipped

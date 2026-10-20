@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
-"""2g 레이더 출력 v1 (method_2g_v1 3절, K8 7). fd_live_2g 의 기업별 가장 최근 스냅샷으로 기업 x 분기(Q, Q+1) 표를 만든다.
-DB 쓰기 없음. 금액 단위 억원. 공개 출력이라 드라이버 코드·이름(drv_code, m1_source)은 넣지 않는다.
-판단 시트에는 '매매 신호 아님(검증 전)' 을 적는다.
+"""2g 레이더 출력 v2 (K8b 4). fd_live_2g 의 기업별 가장 최근 스냅샷(기업 x 분기 Q, Q+1)에
+2d 확대 73곳을 읽기 전용으로 합친 통합본. DB 쓰기 없음. 금액 단위 억원.
+- 2d 행: fd_live_2d 의 기업별 최신 method_version 'v2' 스냅샷 값을 그대로 옮긴다 (다시 계산하지 않음, Q 한 분기만).
+  2d 에 없는 열(OP_hat_alt, 컨센서스, 2g 표시 열)은 비워 둔다.
+- 비교 기준 (cmp_basis, cmp_gap_pct)
+  2g: 컨센서스가 있으면 E5 / 컨센서스 - 1, 없으면 gap_E3_vs_B2 (SARIMA·ETS·Theta 기하평균 대 B2)
+  2d: gap_E4_vs_B2 (2d 사전 등록 v2 신호)
+- 판단 시트: 집단 순서대로, 그 안에서 |cmp_gap_pct| 큰 순. 모든 행에 '매매 신호 아님(검증 전)'.
+- 공개 출력이라 드라이버 코드·이름(drv_code, m1_source)과 HS 코드는 넣지 않는다.
 
 python -m DATA.fdriver.eval2g.radar_2g [--quarter 2026Q3]
-출력: OneDrive/INVESTMENT/한국주식/fdriver/2g/K8/radar/ 와 2g/radar/<분기>/
-      radar2g_v1_<분기>_<생성일시>.csv (전체), _decision.csv (판단), .xlsx (판단 | 전체 | 변수설명), .html, _columns.csv
+출력: OneDrive/INVESTMENT/한국주식/fdriver/2g/K8b/radar/ 와 2g/radar/<분기>/
+      radar2g_v2_<분기>_<생성일시>.csv (전체), _decision.csv (판단), .xlsx (판단 | 전체 | 변수설명), .html, _columns.csv
 """
 import argparse
 import html
@@ -19,14 +25,16 @@ from .. import db
 from ..config import output_path
 from . import common as C
 
-VERSION = "radar2g_v1"
+VERSION = "radar2g_v2"
 EOK = 1e8
 SIGNAL = "매매 신호 아님(검증 전)"
+GROUP_ORDER = ["레이더39", "정상", "저커버리지", "컨센서스 없음", "2d 확대"]
 
 COLDESC = {
     "entity_id": "종목코드",
     "name": "기업명",
-    "group_2g": "대상 집단: 정상(컨센서스 정상 커버리지) / 레이더39(기존 레이더)",
+    "group_2g": "집단: 레이더39 / 정상 / 저커버리지 / 컨센서스 없음 (2g) / 2d 확대 (2d 기록, 읽기 전용)",
+    "source": "값의 출처: 2g (fd_live_2g) / 2d 읽기 전용 (fd_live_2d v2)",
     "market": "시장",
     "industry_group": "업종 묶음 (K1)",
     "quarter": "예측 분기",
@@ -34,28 +42,33 @@ COLDESC = {
     "asof_date": "기준일 (이 날까지 공표된 자료만 사용)",
     "announced": "기준일에 이 분기 실적을 이미 발표했으면 1",
     "rule": "영업이익 규칙 (R1 회귀, R2 원가율·판관비, R3 영업비용률, R4 예측 안 함)",
+    "cmp_basis": "비교 기준: 컨센서스 / B2 (E3 신호) / B2 (2d E4 신호)",
+    "cmp_gap_pct": "비교 기준 대비 차이 (%): 컨센서스면 E5 / 컨센서스 - 1, B2 면 E3(2d 는 E4) / B2 - 1",
     "rev_base": "전년 동기 매출 (억원)",
     "E5": "주 매출 예측 E5 (억원): SARIMA·ETS·Theta·B2 (+M1) 기하평균",
     "E5_yoy_pct": "E5 의 전년 동기 대비 성장률 (%)",
     "cons": "매출 컨센서스 (억원, 기준일 이하 최신 관측)",
     "cons_asof": "컨센서스 관측일",
     "gap_E5_vs_cons_pct": "E5 / 컨센서스 - 1 (%)",
+    "E3": "E3 매출 (억원): SARIMA·ETS·Theta 기하평균 (B2·M1 을 섞지 않음)",
+    "gap_E3_vs_B2_pct": "E3 / B2 - 1 (%)",
+    "gap_E4_vs_B2_pct": "2d 신호: E4 / B2 - 1 (%) (2d 행만)",
     "SARIMA": "SARIMA 매출 예측 (억원)",
     "ETS": "ETS 매출 예측 (억원)",
     "Theta": "Theta 매출 예측 (억원)",
-    "M1": "드라이버 모형 매출 예측 (억원, 기존 레이더 드라이버 기업의 첫 분기만)",
+    "M1": "드라이버 모형 매출 예측 (억원, 기존 레이더 드라이버 기업의 첫 분기, 2d driver 기업)",
     "B2": "B2 매출 예측 (억원): 최근 분기 성장률 유지",
     "e5_n": "E5 에 들어간 모형 수",
     "OP_hat_E5": "주 영업이익 예측 (억원): 규칙에 매출 E5 를 넣은 값",
-    "OP_hat_alt": "대안 영업이익 예측 (억원): R1 최근 12분기 회귀, R2 판관비 이상값 대체 후 예측, R3 주 예측과 같음",
+    "OP_hat_alt": "대안 영업이익 예측 (억원, 2g 만): R1 최근 12분기 회귀, R2 판관비 이상값 대체 후 예측, R3 주 예측과 같음",
     "OP_naive": "단순 영업이익 예측 (억원): B2 매출 x 전년 동기 영업이익률",
     "margin_E5_pct": "OP_hat_E5 / E5 (%)",
     "margin_alt_pct": "OP_hat_alt / E5 (%)",
     "margin_naive_pct": "OP_naive / B2 (%)",
-    "flag_b2_jump": "1: B2 성장률이 세 시계열 모형 중앙값과 20%p 넘게 다름 (최근 한 분기 급변)",
-    "flag_m1_dir": "1: 드라이버 모형 방향이 나머지 네 모형 모두와 반대",
-    "flag_op_sign": "1: 세 영업이익 예측의 부호가 서로 다름",
-    "sga_fixed_n": "판관비를 항등식으로 고친 분기 수 (DART 기준 기업)",
+    "flag_b2_jump": "1: B2 성장률이 세 시계열 모형 중앙값과 20%p 넘게 다름 (2g 만)",
+    "flag_m1_dir": "1: 드라이버 모형 방향이 나머지 네 모형 모두와 반대 (2g 만)",
+    "flag_op_sign": "1: 세 영업이익 예측의 부호가 서로 다름 (2g 만)",
+    "sga_fixed_n": "판관비를 항등식으로 고친 분기 수 (2g DART 기준 기업)",
     "flag_jump": "1: 매출이 전년 대비 2배 초과·절반 미만인 분기가 4개 이상 (K1)",
     "flag_basis": "1: 보정 기준과 DART 가 선정 구간에 계속 다름",
     "flag_spread": "1: 원가 연동 업종 (정유·기초화학·합성수지·화학섬유·철강·비철)",
@@ -64,18 +77,22 @@ COLDESC = {
     "signal": "매매 신호 여부",
     "run_id": "스냅샷 실행 번호",
 }
-JUDGE = ["signal", "entity_id", "name", "group_2g", "industry_group", "quarter", "announced", "E5", "cons",
-         "gap_E5_vs_cons_pct", "E5_yoy_pct", "OP_hat_E5", "OP_hat_alt", "OP_naive", "margin_E5_pct", "rule",
-         "flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_q4"]
+JUDGE = ["signal", "group_2g", "entity_id", "name", "industry_group", "quarter", "announced", "cmp_basis", "cmp_gap_pct",
+         "E5", "cons", "B2", "E3", "E5_yoy_pct", "OP_hat_E5", "OP_hat_alt", "OP_naive", "margin_E5_pct", "rule",
+         "flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_q4", "source"]
 
 
-def latest(quarter: str = None) -> pd.DataFrame:
+def _latest(d: pd.DataFrame) -> pd.DataFrame:
+    d["recorded_at"] = pd.to_datetime(d["recorded_at"])
+    last = d.sort_values("recorded_at").drop_duplicates("entity_id", keep="last")[["entity_id", "run_id"]]
+    return d.merge(last, on=["entity_id", "run_id"])
+
+
+def latest_2g(quarter: str = None) -> pd.DataFrame:
     d = db.read_sql(f"SELECT * FROM `{C.T_LIVE}`")
     if d.empty:
         raise RuntimeError("fd_live_2g 기록 없음")
-    d["recorded_at"] = pd.to_datetime(d["recorded_at"])
-    last = d.sort_values("recorded_at").drop_duplicates("entity_id", keep="last")[["entity_id", "run_id"]]
-    d = d.merge(last, on=["entity_id", "run_id"])
+    d = _latest(d)
     if quarter:
         q0 = d[d["horizon"] == 0]["quarter"].mode().iloc[0]
         if q0 != quarter:
@@ -83,35 +100,85 @@ def latest(quarter: str = None) -> pd.DataFrame:
     return d
 
 
-def table(d: pd.DataFrame) -> pd.DataFrame:
+def latest_2d(quarter: str) -> pd.DataFrame:
+    d = db.read_sql("SELECT * FROM fd_live_2d WHERE quarter = :q AND method_version = 'v2'", {"q": quarter})
+    return _latest(d) if len(d) else d
+
+
+def table_2g(d: pd.DataFrame) -> pd.DataFrame:
     tg = C.read_targets().set_index("entity_id")
+    num = lambda c: pd.to_numeric(d[c], errors="coerce") if c in d else pd.Series(np.nan, index=d.index)
     o = pd.DataFrame({"entity_id": d["entity_id"], "name": d["entity_id"].map(tg["name"])})
     for c in ("group_2g", "market", "industry_group"):
         o[c] = d["entity_id"].map(tg[c])
-    num = lambda c: pd.to_numeric(d[c], errors="coerce")
+    o["source"] = "2g"
     o["quarter"], o["horizon"], o["asof_date"] = d["quarter"], d["horizon"], d["asof_date"]
     o["announced"] = num("announced_at_snapshot").fillna(0).astype(int)
     o["rule"] = d["rule"]
-    for c in ("rev_base", "E5", "cons", "SARIMA", "ETS", "Theta", "M1", "B2", "OP_hat_E5", "OP_hat_alt", "OP_naive"):
+    for c in ("rev_base", "E5", "cons", "E3", "SARIMA", "ETS", "Theta", "M1", "B2", "OP_hat_E5", "OP_hat_alt",
+              "OP_naive"):
         o[c] = num(c) / EOK
-    o["E5_yoy_pct"] = (o["E5"] / o["rev_base"] - 1) * 100
     o["cons_asof"] = d["cons_asof"]
-    o["gap_E5_vs_cons_pct"] = (o["E5"] / o["cons"] - 1) * 100
+    o["gap_E3_vs_B2_pct"] = (np.exp(num("gap_E3_vs_B2")) - 1) * 100
+    o["gap_E4_vs_B2_pct"] = np.nan
     o["e5_n"] = num("e5_n")
-    o["margin_E5_pct"] = o["OP_hat_E5"] / o["E5"] * 100
-    o["margin_alt_pct"] = o["OP_hat_alt"] / o["E5"] * 100
-    o["margin_naive_pct"] = o["OP_naive"] / o["B2"] * 100
     for c in ("flag_b2_jump", "flag_m1_dir", "flag_op_sign", "sga_fixed_n", "flag_jump", "flag_basis", "flag_spread",
               "flag_q4"):
         o[c] = num(c)
     o["filter_fail"] = d["entity_id"].map(tg["filter_fail"]).fillna("")
-    o["signal"] = SIGNAL
     o["run_id"] = d["run_id"]
-    cols = [c for c in COLDESC if c in o]
+    return o
+
+
+def table_2d(d: pd.DataFrame) -> pd.DataFrame:
+    if d.empty:
+        return pd.DataFrame()
+    k1 = pd.read_csv(output_path("2d", "K1") / "k1_universe.csv", dtype={"ticker": str}).set_index("ticker")
+    nm = db.read_sql("SELECT entity_id, name FROM fd_driver_map_2d").drop_duplicates("entity_id").set_index(
+        "entity_id")["name"]
+    num = lambda c: pd.to_numeric(d[c], errors="coerce")
+    o = pd.DataFrame({"entity_id": d["entity_id"], "name": d["entity_id"].map(nm)})
+    o["group_2g"], o["source"] = "2d 확대", "2d 읽기 전용"
+    o["market"] = d["entity_id"].map(k1["market"])
+    o["industry_group"] = d["entity_id"].map(k1["industry_group"])
+    o["quarter"], o["horizon"], o["asof_date"] = d["quarter"], 0, d["asof_date"]
+    o["announced"] = num("announced_at_snapshot").fillna(0).astype(int)
+    o["rule"] = d["rule"]
+    for c in ("rev_base", "E5", "SARIMA", "ETS", "Theta", "M1", "B2", "OP_hat_E5", "OP_naive"):
+        o[c] = num(c) / EOK
+    for c in ("cons", "E3", "OP_hat_alt", "gap_E3_vs_B2_pct", "flag_b2_jump", "flag_m1_dir", "flag_op_sign",
+              "sga_fixed_n"):
+        o[c] = np.nan
+    o["cons_asof"] = None
+    o["gap_E4_vs_B2_pct"] = (np.exp(num("gap_E4_vs_B2")) - 1) * 100
+    o["e5_n"] = num("e5_n")
+    for c in ("flag_jump", "flag_basis", "flag_spread", "flag_q4"):
+        o[c] = num(c)
+    o["filter_fail"] = ""
+    o["run_id"] = d["run_id"]
+    return o
+
+
+def finish(o: pd.DataFrame) -> pd.DataFrame:
+    o["E5_yoy_pct"] = (o["E5"] / o["rev_base"] - 1) * 100
+    o["gap_E5_vs_cons_pct"] = (o["E5"] / o["cons"] - 1) * 100
+    o["margin_E5_pct"] = o["OP_hat_E5"] / o["E5"] * 100
+    o["margin_alt_pct"] = o["OP_hat_alt"] / o["E5"] * 100
+    o["margin_naive_pct"] = o["OP_naive"] / o["B2"] * 100
+    is2d = o["source"] != "2g"
+    has_c = o["gap_E5_vs_cons_pct"].notna()
+    o["cmp_basis"] = np.where(is2d, "B2 (2d E4 신호)", np.where(has_c, "컨센서스", "B2 (E3 신호)"))
+    o["cmp_gap_pct"] = np.where(is2d, o["gap_E4_vs_B2_pct"], np.where(has_c, o["gap_E5_vs_cons_pct"],
+                                                                        o["gap_E3_vs_B2_pct"]))
+    o["signal"] = SIGNAL
     missing = [c for c in o.columns if c not in COLDESC]
     if missing:
         raise RuntimeError(f"설명 없는 열: {missing}")
-    return o[cols].sort_values(["horizon", "group_2g", "industry_group", "name"]).reset_index(drop=True)
+    o = o[[c for c in COLDESC if c in o]]
+    o["_g"] = o["group_2g"].map({g: i for i, g in enumerate(GROUP_ORDER)}).fillna(99)
+    o["_a"] = -o["cmp_gap_pct"].abs().fillna(-1)
+    o = o.sort_values(["horizon", "_g", "_a", "name"]).drop(columns=["_g", "_a"])
+    return o.reset_index(drop=True)
 
 
 def to_html(o: pd.DataFrame, j: pd.DataFrame, title: str) -> str:
@@ -124,8 +191,8 @@ def to_html(o: pd.DataFrame, j: pd.DataFrame, title: str) -> str:
     css = ("body{font-family:sans-serif;font-size:12px}table{border-collapse:collapse;margin:8px 0}"
            "td,th{border:1px solid #ccc;padding:2px 5px;white-space:nowrap}th{background:#eee;position:sticky;top:0}")
     return (f"<!doctype html><html><head><meta charset='utf-8'><title>{title}</title><style>{css}</style></head><body>"
-            f"<h2>{title}</h2><p><b>{SIGNAL}</b>. 금액 억원.</p><h3>판단</h3>{tab(j)}<h3>전체</h3>{tab(o)}"
-            f"<h3>변수 설명</h3>{tab(desc)}</body></html>")
+            f"<h2>{title}</h2><p><b>{SIGNAL}</b>. 금액 억원. 2d 확대 행은 fd_live_2d 기록을 그대로 옮긴 읽기 전용입니다.</p>"
+            f"<h3>판단</h3>{tab(j)}<h3>전체</h3>{tab(o)}<h3>변수 설명</h3>{tab(desc)}</body></html>")
 
 
 def _fmt(v) -> str:
@@ -137,14 +204,14 @@ def _fmt(v) -> str:
 
 
 def main(quarter: str = None) -> dict:
-    d = latest(quarter)
-    o = table(d)
-    q0 = o.loc[o["horizon"] == 0, "quarter"].mode().iloc[0]
+    d = latest_2g(quarter)
+    q0 = d.loc[d["horizon"] == 0, "quarter"].mode().iloc[0]
+    o = finish(pd.concat([table_2g(d), table_2d(latest_2d(q0))], ignore_index=True))
     j = o[JUDGE]
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = f"{VERSION}_{q0}_{stamp}"
     out = output_path("2g", "radar", q0)
-    title = f"2g 레이더 v1 {q0} (기준일 {o['asof_date'].max()})"
+    title = f"2g 통합 레이더 v2 {q0} (2g 기준일 {d['asof_date'].max()})"
     paths = {"csv": out / f"{stem}.csv", "decision": out / f"{stem}_decision.csv", "xlsx": out / f"{stem}.xlsx",
              "html": out / f"{stem}.html", "columns": out / f"{stem}_columns.csv"}
     o.to_csv(paths["csv"], index=False, encoding="utf-8-sig")
@@ -156,10 +223,11 @@ def main(quarter: str = None) -> dict:
         o.round(2).to_excel(w, sheet_name="전체", index=False)
         desc.to_excel(w, sheet_name="변수설명", index=False)
     paths["html"].write_text(to_html(o, j, title), encoding="utf-8")
-    k8 = output_path("2g", "K8", "radar")
+    k8 = output_path("2g", "K8b", "radar")
     for p in paths.values():
         shutil.copy2(p, k8 / p.name)
     print({k: str(v) for k, v in paths.items()})
+    print(o.groupby(["quarter", "group_2g"]).size().to_dict())
     return {"rows": len(o), "paths": paths}
 
 

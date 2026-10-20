@@ -11,6 +11,7 @@ python -m DATA.fdriver.eval2g.live_2g [--asof YYYY-MM-DD] [--dry] [--no-refresh]
    를 구하고, M1 이 있으면 E5 를 다시 조합 (k7_methods.combine), OP_hat_E5 를 같은 규칙 계수로 다시 계산.
    OP_hat_alt (R1 최근 12분기 OLS, R2 판관비 이상값 대체 후 예측), flag_b2_jump, flag_m1_dir, flag_op_sign.
 5. 컨센서스: Q·Q+1 매출 컨센서스 중 관측일 <= t 최신 (kr_consensus.read_consensus).
+   K8b: E3 (SARIMA·ETS·Theta 기하평균) 과 gap_E3_vs_B2 = ln(E3) - ln(B2) 를 더한다.
 6. 기록: fd_live_2g (entity_id, quarter, run_id) insert_fd_strict. 이미 발표한 기업도 announced_at_snapshot = 1 로 기록.
 """
 import os
@@ -51,7 +52,7 @@ G2_COLS = {
     "cons": "DOUBLE", "cons_asof": "DATE", "gap_E5_vs_cons": "DOUBLE", "OP_hat_alt": "DOUBLE", "op_a_alt": "DOUBLE",
     "op_b_alt": "DOUBLE", "sga_hat_alt": "DOUBLE", "n_sga_capped": "INT", "alt_note": "VARCHAR(80)",
     "flag_b2_jump": "TINYINT", "flag_m1_dir": "TINYINT", "flag_op_sign": "TINYINT", "sga_fixed_n": "INT",
-    "method_2g_commit": "CHAR(40)",
+    "method_2g_commit": "CHAR(40)", "g_E3": "DOUBLE", "E3": "DOUBLE", "gap_E3_vs_B2": "DOUBLE",
 }
 DROP_V2 = {"prereg_v2_commit"}
 COLS = V1_COLS + [c for c in V2_COLS if c not in DROP_V2] + list(G2_COLS)
@@ -96,6 +97,13 @@ def post(rec: dict, row, m1, items: pd.DataFrame, R_all: pd.Series, ann_e: pd.Se
         for k in ("E5", "E4", "E5_noM1"):
             rec[k] = lvl(rec[f"g_{k}"])
         rec["gap_E4_vs_B2"] = (cb["g_E4"] - rec["g_B2"]) if cb["g_E4"] is not None and rec["g_B2"] is not None else None
+    # E3 = SARIMA·ETS·Theta 기하평균 (B2·M1 을 섞지 않은 신호, K8b), gap_E3_vs_B2 = ln(E3) - ln(B2)
+    g3 = [rec.get(f"g_{k}") for k in ("SARIMA", "ETS", "Theta")]
+    g3 = [g for g in g3 if g is not None and pd.notna(g)]
+    rec["g_E3"] = float(np.mean(g3)) if g3 else None
+    rec["E3"] = lvl(rec["g_E3"])
+    b2 = rec.get("g_B2")
+    rec["gap_E3_vs_B2"] = (rec["g_E3"] - b2) if g3 and b2 is not None and pd.notna(b2) else None
     E5 = rec.get("E5")
     # OP_hat_E5 다시 계산 (같은 계수·비용 예측)
     rec["OP_hat_E5"] = None
@@ -236,7 +244,11 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
         tg, dry = tg[tg["entity_id"].isin(only)], True
     ids = tg["entity_id"].tolist()
     # 1. 공시일, 매출 보정 갱신
-    ann_all = announced(ids, Q, t, refresh and not dry)
+    ev_skipped = []
+    if refresh and not dry:
+        start = (Q - pd.offsets.QuarterEnd(1) + pd.Timedelta(days=1)).strftime("%Y%m%d")
+        ev_skipped = C.safe_load_events(ids, start)
+    ann_all = announced(ids, Q, t, False)
     tim["events"] = time.time() - t0
     adj_new = C.build_adj(ids, Q)["adj"]
     adj_new = adj_new[adj_new["entity_id"].isin(ids)].copy()
@@ -319,7 +331,7 @@ def main(asof: str, dry: bool, refresh: bool = True, workers: int = 16, only=Non
          "alt_note": d["alt_note"].value_counts().to_dict(),
          "flags": {f: d.groupby("quarter")[f].apply(lambda x: int((x == 1).sum())).to_dict()
                    for f in ("flag_b2_jump", "flag_m1_dir", "flag_op_sign")},
-         "adj_rows_upserted": adj_upd, "csv": str(csv), "code_sha256": code_hash(),
+         "events_skipped": ev_skipped, "adj_rows_upserted": adj_upd, "csv": str(csv), "code_sha256": code_hash(),
          "method_2g_commit": C.METHOD_COMMIT, "ddl_added": [], "rows_written": 0}
     if not dry:
         s["ddl_added"] = ensure_table()

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""2g K8 1~2: 대상 확정, 매출 보정(fd_rev_adj_2g), 판관비 항등식 수정, 영업이익 규칙(fd_op_rule_2g).
-method_2g_v1.md (커밋 5dc9fdb) 1~2절. 쓰기는 fd_target_2g, fd_rev_adj_2g, fd_op_rule_2g (2g 작업 표, upsert) 와 CSV 만.
+"""2g K8·K8b 1~2: 대상 확정, 매출 보정(fd_rev_adj_2g), 판관비 항등식 수정, 영업이익 규칙(fd_op_rule_2g).
+method_2g_v1.md (커밋 5dc9fdb) 1~2절. K8b: 대상에 (C) 커버리지 '없음'·'저커버리지' (같은 필터) 를 더한다. 쓰기는 fd_target_2g, fd_rev_adj_2g, fd_op_rule_2g (2g 작업 표, upsert) 와 CSV 만.
 
 python -m DATA.fdriver.eval2g.k8_setup [--dry]
 """
@@ -20,7 +20,8 @@ from ..eval2d.k1_survey import SEL
 from ..eval2d.k4b_fix import C_PP, MIN_YEARS
 from . import common as C
 
-OUT = output_path("2g", "K8")
+OUT = output_path("2g", "K8b")
+GROUP_C = {"없음": "컨센서스 없음", "저커버리지": "저커버리지"}
 FILTERS = {"f1_rev_history": "매출 이력", "f2_rev_size": "매출 300억", "f3_price": "주가 이벤트",
            "f5_not_fin_holding": "금융·지주"}
 
@@ -57,7 +58,10 @@ def universe() -> (pd.DataFrame, list):
     steps.append(("1 (A) 정상 + 2d 필터 1~5 통과 (레이더 39 제외)", len(a)))
     b = u[u["in_radar39"]].assign(group_2g="레이더39")
     steps.append(("1 (B) 기존 레이더 39곳", len(b)))
-    t = pd.concat([a, b], ignore_index=True)
+    c = u[u["coverage_class"].isin(list(GROUP_C)) & u["pass_all_ex39"]].copy()
+    c["group_2g"] = c["coverage_class"].map(GROUP_C)
+    steps.append(("1 (C) 없음·저커버리지 + 2d 필터 1~5 통과 (K8b)", len(c)))
+    t = pd.concat([a, b, c], ignore_index=True)
     t["filter_fail"] = t.apply(lambda r: ",".join(v for k, v in FILTERS.items() if not bool(r[k])), axis=1)
     m2d = set(db.read_sql("SELECT entity_id FROM fd_driver_map_2d WHERE status IN ('driver','ts_only')")["entity_id"])
     t["in_2d"] = t["ticker"].isin(m2d)
