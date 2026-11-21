@@ -1,0 +1,254 @@
+﻿hs_code,result,reason,reason_type
+845710,ok,ok,ok
+845811,ok,ok,ok
+845891,ok,ok,ok
+845931,skip,빈 달 16개,빈 달 N개
+846229,ok,ok,ok
+846630,ok,ok,ok
+846693,ok,ok,ok
+846729,ok,ok,ok
+847130,ok,ok,ok
+847150,ok,ok,ok
+847170,ok,ok,ok
+847290,ok,ok,ok
+847330,ok,ok,ok
+847432,ok,ok (빈 달 3개 0 채움),ok
+847710,ok,ok,ok
+847790,ok,ok,ok
+847950,ok,ok,ok
+847981,ok,ok,ok
+847982,ok,ok,ok
+847989,ok,ok,ok
+847990,ok,ok,ok
+848071,ok,ok,ok
+8481,ok,ok,ok
+848120,ok,ok,ok
+848180,ok,ok,ok
+848190,ok,ok,ok
+848210,ok,ok,ok
+848220,ok,ok,ok
+848299,ok,ok,ok
+848310,ok,ok,ok
+848330,ok,ok,ok
+848340,ok,ok,ok
+848350,ok,ok,ok
+848390,ok,ok,ok
+848620,ok,ok,ok
+848630,ok,ok,ok
+848640,ok,ok,ok
+848690,ok,ok,ok
+848790,ok,ok,ok
+8501,ok,ok,ok
+850110,ok,ok,ok
+850120,ok,ok,ok
+850131,ok,ok,ok
+850132,ok,ok,ok
+850133,ok,ok,ok
+850134,ok,ok,ok
+850140,ok,ok,ok
+850151,ok,ok,ok
+850152,ok,ok,ok
+850153,ok,ok,ok
+850161,ok,ok,ok
+850162,ok,ok,ok
+850163,ok,ok,ok
+850164,ok,ok,ok
+850171,skip,길이 57개월 < 60,길이 N개월 < N
+850172,skip,길이 58개월 < 60,길이 N개월 < N
+850180,skip,빈 달 11개,빈 달 N개
+8502,ok,ok,ok
+850212,ok,ok,ok
+850213,ok,ok,ok
+850231,skip,0인 달 35%,N인 달 N%
+850239,ok,ok,ok
+8503,ok,ok,ok
+850300,ok,ok,ok
+8504,ok,ok,ok
+850421,ok,ok,ok
+850422,ok,ok,ok
+850423,ok,ok,ok
+850433,ok,ok,ok
+850434,ok,ok,ok
+850440,ok,ok,ok
+850450,ok,ok,ok
+850490,ok,ok,ok
+850590,ok,ok,ok
+850650,ok,ok,ok
+850710,ok,ok,ok
+850760,ok,ok,ok
+850790,ok,ok,ok
+850819,ok,ok,ok
+851130,ok,ok,ok
+851150,ok,ok,ok
+851220,ok,ok,ok
+851290,ok,ok,ok
+851419,skip,길이 58개월 < 60,길이 N개월 < N
+851580,ok,ok,ok
+851660,ok,ok,ok
+851680,ok,ok,ok
+851690,ok,ok,ok
+8517,ok,ok,ok
+851712,skip,"끊김 (최신월 2022-05, 53개월 뒤처짐)",끊김
+851713,skip,길이 58개월 < 60,길이 N개월 < N
+851762,ok,ok,ok
+851770,skip,"끊김 (최신월 2022-09, 49개월 뒤처짐)",끊김
+851771,skip,길이 58개월 < 60,길이 N개월 < N
+851779,skip,길이 58개월 < 60,길이 N개월 < N
+851780,skip,"끊김 (최신월 2007-01, 237개월 뒤처짐)",끊김
+851890,ok,ok,ok
+852190,ok,ok,ok
+852329,ok,ok,ok
+852349,ok,ok,ok
+852351,ok,ok,ok
+852380,ok,ok,ok
+852411,skip,길이 58개월 < 60,길이 N개월 < N
+852412,skip,길이 58개월 < 60,길이 N개월 < N
+852491,skip,빈 달 179개,빈 달 N개
+852492,skip,길이 58개월 < 60,길이 N개월 < N
+852499,skip,빈 달 178개,빈 달 N개
+8525,ok,ok,ok
+852580,skip,"끊김 (최신월 2023-12, 34개월 뒤처짐)",끊김
+852589,skip,길이 58개월 < 60,길이 N개월 < N
+852610,ok,ok,ok
+852851,skip,"끊김 (최신월 2017-07, 111개월 뒤처짐)",끊김
+852852,ok,ok,ok
+852859,ok,ok,ok
+852872,ok,ok,ok
+852910,ok,ok,ok
+852990,ok,ok,ok
+853110,ok,ok,ok
+853120,ok,ok,ok
+853222,ok,ok,ok
+853224,ok,ok,ok
+853229,ok,ok,ok
+853340,ok,ok,ok
+853400,ok,ok,ok
+8535,ok,ok,ok
+853521,ok,ok,ok
+853529,ok,ok,ok
+853530,ok,ok,ok
+853590,ok,ok,ok
+853620,ok,ok,ok
+853649,ok,ok,ok
+853650,ok,ok,ok
+853669,ok,ok,ok
+853690,ok,ok,ok
+853710,ok,ok,ok
+853720,ok,ok,ok
+853890,ok,ok,ok
+854110,ok,ok,ok
+854121,ok,ok,ok
+854129,ok,ok,ok
+854140,skip,"끊김 (최신월 2022-03, 55개월 뒤처짐)",끊김
+854141,skip,길이 58개월 < 60,길이 N개월 < N
+854142,skip,길이 58개월 < 60,길이 N개월 < N
+854149,skip,길이 58개월 < 60,길이 N개월 < N
+854159,skip,길이 58개월 < 60,길이 N개월 < N
+8542,ok,ok,ok
+854231,ok,ok,ok
+854232,ok,ok,ok
+854233,ok,ok,ok
+854239,ok,ok,ok
+854290,ok,ok,ok
+854321,skip,자료 없음,자료 없음
+854370,ok,ok,ok
+854390,ok,ok,ok
+8544,ok,ok,ok
+854411,ok,ok,ok
+854420,ok,ok,ok
+854430,ok,ok,ok
+854442,ok,ok,ok
+854449,ok,ok,ok
+854460,ok,ok,ok
+854470,ok,ok,ok
+854519,ok,ok,ok
+854710,ok,ok,ok
+854720,ok,ok,ok
+860310,skip,빈 달 29개,빈 달 N개
+860900,ok,ok,ok
+8701,ok,ok,ok
+870191,ok,ok,ok
+870192,ok,ok,ok
+870193,ok,ok,ok
+870210,ok,ok,ok
+8703,ok,ok,ok
+870321,ok,ok,ok
+870322,ok,ok,ok
+870323,ok,ok,ok
+870324,ok,ok,ok
+870332,ok,ok,ok
+870333,ok,ok,ok
+870340,ok,ok,ok
+870360,ok,ok,ok
+870380,ok,ok,ok
+870421,ok,ok,ok
+870431,ok,ok,ok
+870460,skip,길이 58개월 < 60,길이 N개월 < N
+870530,ok,ok (빈 달 2개 0 채움),ok
+870590,ok,ok,ok
+870810,ok,ok,ok
+870829,ok,ok,ok
+870830,ok,ok,ok
+870840,ok,ok,ok
+870850,ok,ok,ok
+870870,ok,ok,ok
+870880,ok,ok,ok
+870892,ok,ok,ok
+870893,ok,ok,ok
+870894,ok,ok,ok
+870895,ok,ok,ok
+870899,ok,ok,ok
+871000,ok,ok,ok
+880211,skip,빈 달 25개,빈 달 N개
+880730,skip,길이 58개월 < 60,길이 N개월 < N
+890102,skip,자료 없음,자료 없음
+890110,skip,빈 달 68개,빈 달 N개
+890120,ok,ok,ok
+890190,ok,ok,ok
+890520,skip,빈 달 111개,빈 달 N개
+890590,skip,빈 달 16개,빈 달 N개
+890610,skip,"끊김 (최신월 2026-04, 6개월 뒤처짐)",끊김
+900120,ok,ok,ok
+900130,ok,ok,ok
+900190,ok,ok,ok
+900290,ok,ok,ok
+900691,ok,ok,ok
+901210,ok,ok,ok
+901320,ok,ok,ok
+901380,ok,ok,ok
+901812,ok,ok,ok
+901819,ok,ok,ok
+901849,ok,ok,ok
+901890,ok,ok,ok
+902129,ok,ok,ok
+902190,ok,ok,ok
+902213,ok,ok,ok
+902214,ok,ok,ok
+902290,ok,ok,ok
+902519,ok,ok,ok
+902610,ok,ok,ok
+902710,ok,ok,ok
+902750,ok,ok,ok
+902789,skip,길이 58개월 < 60,길이 N개월 < N
+9028,ok,ok,ok
+902920,ok,ok,ok
+903040,ok,ok,ok
+903082,ok,ok,ok
+903090,ok,ok,ok
+903141,ok,ok,ok
+903149,ok,ok,ok
+903180,ok,ok,ok
+903190,ok,ok,ok
+903289,ok,ok,ok
+930591,ok,ok,ok
+930630,ok,ok,ok
+930690,ok,ok,ok
+940130,skip,"끊김 (최신월 2022-03, 55개월 뒤처짐)",끊김
+940199,skip,길이 58개월 < 60,길이 N개월 < N
+940340,ok,ok,ok
+9405,ok,ok,ok
+940540,skip,"끊김 (최신월 2022-10, 48개월 뒤처짐)",끊김
+950300,ok,ok,ok
+961610,ok,ok,ok
+961900,ok,ok,ok
+970191,skip,길이 58개월 < 60,길이 N개월 < N
